@@ -1,0 +1,45 @@
+{
+  "source": {
+    "spec": "webcam",
+    "width": 1280,
+    "height": 720,
+    "realtime": false
+  },
+  "pose": {
+    "backend": "rtmpose-onnx",
+    "model": "rtmpose-m-body7-256x192",
+    "cache": "../models",
+    "provider": "CPUExecutionProvider",
+    "crop": null
+  },
+  "analysis": {
+    "window_s": 4.0,
+    "min_frames": 15,
+    "handedness": "right",
+    "camera_view": "behind_server",
+    "serve_type": "unknown"
+  },
+  "reference": {
+    "table": "../reference/projected2d/board_reference.json",
+    "rules": "../coaching/rules.json",
+    "allow_unvalidated_reference": false,
+    "rating": "../coaching/rating.json"
+  },
+  "phraser": {
+    "backend": "canonical",
+    "url": "http://127.0.0.1:11434/v1/chat/completions",
+    "model": "qwen2.5:1.5b-instruct",
+    "timeout_s": 1.0
+  },
+  "audio": {
+    "backend": "print",
+    "wav_dir": "../audio"
+  },
+  "session": {
+    "cooldown_s": 2.0,
+    "out_dir": "../runs"
+  },
+  "check": {
+    "golden_dir": "../local/golden"
+  }
+}

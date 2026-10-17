@@ -1,0 +1,95 @@
+{
+  "version": "djoker-match-score-v0.2",
+  "status": "draft_unreviewed",
+  "name": "Djokovic match score",
+  "definition": "Weighted mean of per-metric scores. A metric scores 100 inside Djokovic's typical band at the matched camera view (10th-90th percentile, or 25th-75th for noisier arm metrics) and falls linearly to 0 at zero_at outside it. Measures similarity to one reference player in projected 2D, not serve quality, speed or outcome.",
+  "note": "Weights and zero_at distances are illustrative engineering choices, not validated biomechanical standards. Legs 65%, hitting/toss arm 35%.",
+  "min_coverage": 0.6,
+  "view_sensitivity_deg": 10,
+  "speak": true,
+  "speech_template": "Score {score}.",
+  "not_measured": {
+    "racket_drop_depth": "Trophy and racket-drop elbow folds look alike in 2D from behind, and the reference is unstable in that 0.1-0.3 s phase; needs racket tracking and faster capture.",
+    "pronation": "Forearm rotation finishes within ~10 ms of contact; the 17-point body skeleton has no hand orientation and the reference has no hand or racket data.",
+    "racket_path_and_ball": "No racket or ball tracking."
+  },
+  "metrics": {
+    "front_knee_at_load": {
+      "weight": 0.17,
+      "zero_at": 25.0,
+      "units": "deg",
+      "band": "p10_p90",
+      "label": "front knee bend"
+    },
+    "back_knee_at_load": {
+      "weight": 0.17,
+      "zero_at": 25.0,
+      "units": "deg",
+      "band": "p10_p90",
+      "label": "back knee bend"
+    },
+    "bend_duration": {
+      "weight": 0.1,
+      "zero_at": 0.25,
+      "units": "s",
+      "band": "p10_p90",
+      "label": "bend timing"
+    },
+    "extend_duration": {
+      "weight": 0.06,
+      "zero_at": 0.25,
+      "units": "s",
+      "band": "p10_p90",
+      "label": "push-up timing"
+    },
+    "front_knee_drive_speed": {
+      "weight": 0.1,
+      "zero_at": 250.0,
+      "units": "deg/s",
+      "band": "p10_p90",
+      "label": "leg drive speed"
+    },
+    "load_to_reach": {
+      "weight": 0.05,
+      "zero_at": 0.25,
+      "units": "s",
+      "band": "p10_p90",
+      "label": "drive-to-contact timing"
+    },
+    "trophy_upperarm_elevation": {
+      "weight": 0.1,
+      "zero_at": 40.0,
+      "units": "deg",
+      "band": "p25_p75",
+      "label": "trophy elbow lift"
+    },
+    "arm_fold_lead": {
+      "weight": 0.08,
+      "zero_at": 0.25,
+      "units": "s",
+      "band": "p25_p75",
+      "label": "arm-leg timing"
+    },
+    "contact_elbow_extension": {
+      "weight": 0.07,
+      "zero_at": 40.0,
+      "units": "deg",
+      "band": "p10_p90",
+      "label": "arm extension at contact"
+    },
+    "trophy_toss_height": {
+      "weight": 0.05,
+      "zero_at": 0.5,
+      "units": "torso",
+      "band": "p10_p90",
+      "label": "toss arm height"
+    },
+    "contact_hand_height": {
+      "weight": 0.05,
+      "zero_at": 0.5,
+      "units": "torso",
+      "band": "p10_p90",
+      "label": "reach height at contact"
+    }
+  }
+}

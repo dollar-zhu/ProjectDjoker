@@ -1,0 +1,226 @@
+{
+  "version": "djoker-serve-rules-v0.2",
+  "status": "draft_unreviewed",
+  "note": "Thresholds are illustrative engineering values, not validated biomechanical or clinical cutoffs. Deltas are user minus Djokovic median at the matched camera view (degrees or seconds). Arm rules use the 25th-75th percentile band because the reference arm data is noisier than the legs.",
+  "max_speech_words": 25,
+  "rules": [
+    {
+      "id": "serve_knee_loading_front_leg",
+      "priority": 10,
+      "kind": "cue",
+      "mode": "reference",
+      "requires": [
+        "front_knee_at_load",
+        "back_knee_at_load"
+      ],
+      "condition": {
+        "all": [
+          [
+            "front_knee_at_load",
+            "delta_ge",
+            6.0
+          ],
+          [
+            "back_knee_at_load",
+            "delta_le",
+            -6.0
+          ]
+        ]
+      },
+      "observation": "At your deepest bend your front knee was {front_knee_at_load.user:.0f} degrees and your back knee {back_knee_at_load.user:.0f}; Djokovic is typically {front_knee_at_load.ref:.0f} and {back_knee_at_load.ref:.0f}.",
+      "suggestion": "Sink into your front knee and keep the back leg quieter.",
+      "drill": "Front-knee freeze: toss, hold the bottom of the bend for one second with weight over the front foot, then serve.",
+      "canonical_speech": "Sink into your front knee, not your back knee.",
+      "speech_code": "SERVE_LOAD_FRONT_LEG"
+    },
+    {
+      "id": "serve_trophy_elbow_low",
+      "priority": 15,
+      "kind": "cue",
+      "mode": "reference",
+      "requires": [
+        "trophy_upperarm_elevation"
+      ],
+      "condition": {
+        "all": [
+          [
+            "trophy_upperarm_elevation",
+            "below_p25_by",
+            5.0
+          ]
+        ]
+      },
+      "observation": "At the trophy position your hitting elbow was lifted about {trophy_upperarm_elevation.user:.0f} degrees from your side; Djokovic is typically about {trophy_upperarm_elevation.ref:.0f}.",
+      "suggestion": "Lift your hitting elbow higher in the trophy position.",
+      "drill": "Trophy freeze: toss, pause with the hitting elbow up and the racket tip pointing up, then swing.",
+      "canonical_speech": "Lift your hitting elbow higher in the trophy position.",
+      "speech_code": "SERVE_TROPHY_ELBOW"
+    },
+    {
+      "id": "serve_arm_early",
+      "priority": 18,
+      "kind": "cue",
+      "mode": "reference",
+      "requires": [
+        "arm_fold_lead"
+      ],
+      "condition": {
+        "all": [
+          [
+            "arm_fold_lead",
+            "above_p75_by",
+            0.05
+          ]
+        ]
+      },
+      "observation": "Your hitting arm folded into the trophy {arm_fold_lead.user:.2f} seconds before your deepest knee bend; Djokovic's usually folds about {arm_fold_lead.ref:.2f} seconds before.",
+      "suggestion": "Let your hitting arm fold back as your knees bend, not before.",
+      "drill": "Shadow serves: let the elbow fold and the knees sink at the same moment, then drive up.",
+      "canonical_speech": "Fold your hitting arm back as your knees bend, not before.",
+      "speech_code": "SERVE_ARM_SYNC"
+    },
+    {
+      "id": "serve_knee_loading_shallow",
+      "priority": 20,
+      "kind": "cue",
+      "mode": "reference",
+      "requires": [
+        "front_knee_at_load",
+        "back_knee_at_load"
+      ],
+      "condition": {
+        "all": [
+          [
+            "front_knee_at_load",
+            "delta_ge",
+            8.0
+          ],
+          [
+            "back_knee_at_load",
+            "delta_ge",
+            8.0
+          ]
+        ]
+      },
+      "observation": "Both knees stayed straighter than Djokovic's at your deepest bend.",
+      "suggestion": "Let both knees bend a little more as the ball goes up.",
+      "drill": "Shadow serves: sink smoothly with the toss, then push up.",
+      "canonical_speech": "Bend both knees a little more as the ball goes up.",
+      "speech_code": "SERVE_LOAD_DEEPER"
+    },
+    {
+      "id": "serve_load_tempo",
+      "priority": 30,
+      "kind": "cue",
+      "mode": "reference",
+      "requires": [
+        "bend_duration"
+      ],
+      "condition": {
+        "all": [
+          [
+            "bend_duration",
+            "below_p10",
+            null
+          ]
+        ]
+      },
+      "observation": "Your knee bend took {bend_duration.user:.2f} seconds; Djokovic usually takes about {bend_duration.ref:.2f}.",
+      "suggestion": "Sink slowly with the toss instead of dropping late.",
+      "drill": "Say 'down' as the ball leaves your hand and 'up' as you drive.",
+      "canonical_speech": "Sink slowly with the toss instead of dropping late.",
+      "speech_code": "SERVE_LOAD_TEMPO"
+    },
+    {
+      "id": "serve_leg_drive_positive",
+      "priority": 50,
+      "kind": "praise",
+      "mode": "reference",
+      "requires": [
+        "front_knee_drive_speed",
+        "extend_duration"
+      ],
+      "condition": {
+        "all": [
+          [
+            "front_knee_drive_speed",
+            "within_p10_p90",
+            null
+          ],
+          [
+            "extend_duration",
+            "within_p10_p90",
+            null
+          ]
+        ]
+      },
+      "observation": "Your leg drive was as quick as Djokovic's.",
+      "suggestion": null,
+      "drill": null,
+      "canonical_speech": "Good leg drive.",
+      "speech_code": "SERVE_DRIVE_GOOD"
+    },
+    {
+      "id": "serve_contact_extension_positive",
+      "priority": 55,
+      "kind": "praise",
+      "mode": "reference",
+      "requires": [
+        "contact_elbow_extension",
+        "contact_hand_height"
+      ],
+      "condition": {
+        "all": [
+          [
+            "contact_elbow_extension",
+            "within_p10_p90",
+            null
+          ],
+          [
+            "contact_hand_height",
+            "within_p10_p90",
+            null
+          ]
+        ]
+      },
+      "observation": "Your hitting arm reached up as fully as Djokovic's at contact.",
+      "suggestion": null,
+      "drill": null,
+      "canonical_speech": "Good reach at contact.",
+      "speech_code": "SERVE_REACH_GOOD"
+    },
+    {
+      "id": "serve_observation",
+      "priority": 90,
+      "kind": "cue",
+      "mode": "observation",
+      "requires": [
+        "front_knee_at_load",
+        "back_knee_at_load"
+      ],
+      "condition": {
+        "all": []
+      },
+      "observation": "At your deepest bend your front knee was {front_knee_at_load.user:.0f} degrees and your back knee {back_knee_at_load.user:.0f}.",
+      "suggestion": null,
+      "drill": null,
+      "canonical_speech": "Serve recorded. Front knee {front_knee_at_load.user:.0f}, back knee {back_knee_at_load.user:.0f} degrees at your lowest point.",
+      "speech_code": "SERVE_OBSERVATION"
+    },
+    {
+      "id": "retry_capture",
+      "priority": 100,
+      "kind": "cue",
+      "mode": "retry",
+      "requires": [],
+      "condition": {
+        "all": []
+      },
+      "observation": "Not enough reliable body tracking for this serve.",
+      "suggestion": "Stay fully in view of the camera and serve again.",
+      "drill": null,
+      "canonical_speech": "I couldn't see that serve clearly. Stay in view and try again.",
+      "speech_code": "RETRY_CAPTURE"
+    }
+  ]
+}
