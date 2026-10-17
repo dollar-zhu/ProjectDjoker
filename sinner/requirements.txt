@@ -1,0 +1,6 @@
+numpy
+pandas
+pyarrow
+gdown
+matplotlib
+pillow

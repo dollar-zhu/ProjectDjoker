@@ -1,0 +1,28 @@
+{
+  "serves": 219,
+  "frames": 17084,
+  "groups": {
+    "All": 219,
+    "First serves": 152,
+    "Second serves": 67
+  },
+  "flags": {
+    "angle_jump_over_40deg_per_frame": 219,
+    "broad_reach_plateau": 10,
+    "cock_search_boundary": 9,
+    "phase_smoothing_sensitive": 73,
+    "reach_search_boundary": 2
+  },
+  "knee_event": {
+    "Left knee": {
+      "mean": 99.11,
+      "p10": 85.13,
+      "p90": 107.45
+    },
+    "Right knee": {
+      "mean": 89.43,
+      "p10": 84.0,
+      "p90": 95.5
+    }
+  }
+}
