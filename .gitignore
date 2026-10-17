@@ -5,3 +5,15 @@ __pycache__/
 .mplconfig/
 *.part
 dms-reference/
+
+# Riptide artifacts (cloud-synced)
+.humanlayer/tasks/
+
+runs/
+models/
+third_party/
+reference/projected2d/*.npz
+dist/
+build/
+*.egg-info/
+local/
