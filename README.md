@@ -32,6 +32,17 @@ For the original six-serve smoke test:
 .venv/bin/python smoke/pipeline.py run --layout h36m
 ```
 
+## DMS interchange contract
+
+The [DMS v0.1 specification](docs/dms-v0.1.md) defines canonical17, eight explicit angle definitions, timestamps, confidence semantics, and fail-closed event comparisons. It includes a MediaPipe image-output adapter and a provisional Djokovic exporter. Neither adapter invents missing timestamps, confidence, or mapping validation.
+
+```sh
+.venv/bin/python -m dms export-reference --out dms-reference
+.venv/bin/python -m unittest discover -s tests -p "test_dms.py" -v
+```
+
+Djokovic packets are structurally valid but are rejected for comparison until anatomical mapping and essential compatibility conditions are validated.
+
 ## View the animation
 
 Open `visualization/index.html` in a browser. The interactive charts require the pinned D3 library from jsDelivr. The source fragment is `visualization/djokovic-88-serves.fragment.html`.
