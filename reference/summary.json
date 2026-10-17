@@ -1,0 +1,37 @@
+{
+  "serves": 88,
+  "frames": 7329,
+  "first_serves": 75,
+  "second_serves": 13,
+  "knee_bend_event": {
+    "Left knee": {
+      "mean": 102.40501906655051,
+      "p10": 94.99744567871093,
+      "p90": 107.9068717956543
+    },
+    "Right knee": {
+      "mean": 117.66306573694402,
+      "p10": 104.0711654663086,
+      "p90": 125.58101425170898
+    }
+  },
+  "estimated_events_original_clip_percent": {
+    "Deepest knee bend": {
+      "p10": 52.716292134831455,
+      "median": 54.48607522250933,
+      "p90": 59.103078982597054
+    },
+    "Highest right wrist": {
+      "p10": 65.50427350427351,
+      "median": 81.17647058823529,
+      "p90": 84.77642276422763
+    }
+  },
+  "phase_flags": {
+    "angle_jump_over_40deg_per_frame": 88,
+    "broad_reach_plateau": 1,
+    "cock_search_boundary": 41,
+    "phase_smoothing_sensitive": 27,
+    "reach_search_boundary": 3
+  }
+}

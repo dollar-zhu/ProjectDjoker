@@ -1,0 +1,71 @@
+{
+  "upstream_commit": "7889457cc9b50b0c2a9fdcc81d786bcdb6b8652c",
+  "files": [
+    {
+      "path": "metadata.parquet",
+      "id": "1rBJH3qZbp1ln5vlxUMc0QRx18LiPqvXK",
+      "sha256": "4ed608b4a47ff5c2c1b8571bc955761440218e612861a8863c1f973baba90615",
+      "bytes": 108777
+    },
+    {
+      "path": "keypoints/2024-usopen-1164_pt0004_srv1.npy",
+      "id": "1pDM5wF2RORHrmTnhWQ8DvTKrqhvbSyiN",
+      "sha256": "e85c0d5919703e86f6e4854017bb377c87461ccc9a4974b5488b5e67fa085a2f",
+      "bytes": 16244
+    },
+    {
+      "path": "keypoints/2024-usopen-1164_pt0008_srv1.npy",
+      "id": "17CvdO58sTAh4cLUQxoRtJQrMuOxmNTeG",
+      "sha256": "03fd828ca955569ebde0fb67d5d26bb73e6056d971d74cad1b33a0cc00a69368",
+      "bytes": 17264
+    },
+    {
+      "path": "keypoints/2024-usopen-1164_pt0013_srv2.npy",
+      "id": "1RW6UBosmpk7ccogWFYA3kvVORIvWTBrJ",
+      "sha256": "4980098b028141783f8e43c306e2ae115deac899442fd4055f123c1a2ad25e5a",
+      "bytes": 15836
+    },
+    {
+      "path": "keypoints/2024-usopen-1101_pt0001_srv1.npy",
+      "id": "17m74ud1_NerhKbxDvpSpB5LPycAxvBRA",
+      "sha256": "ef3577ce8befc2ff09e9b0de89c72b4aa8fbbb61d48da84bc8ff1121f5a3a445",
+      "bytes": 18080
+    },
+    {
+      "path": "keypoints/2024-usopen-2101_pt0001_srv1.npy",
+      "id": "1wvTQwWASQuHj-p_Y2RoCK3EShyxbH67Q",
+      "sha256": "e672d587db66839b6a6f3da4c8ca4879fdd92aa3d54081f790a6968548c55b6d",
+      "bytes": 18284
+    },
+    {
+      "path": "keypoints/2024-usopen-2101_pt0003_srv1.npy",
+      "id": "1RAmg0HFRctVPWqJMfVqMordmrWNPZsNw",
+      "sha256": "61458eb9b04949e2cb1a8f4592b3ee997e8d98f0a3a446d1a7b624ce0ddf7bdb",
+      "bytes": 18284
+    },
+    {
+      "path": "angular_velocities/2024-usopen-1164_pt0004_srv1.npy",
+      "id": "1h29e6WH0VbkTqSVlLV3vizoXKM5XWJAC",
+      "sha256": "8c33805ad757552be6287bc40652cc5fa221363ca3a8d756b3a00e7d4cbdc3a7",
+      "bytes": 2656
+    },
+    {
+      "path": "angular_velocities/2024-usopen-1164_pt0008_srv1.npy",
+      "id": "1M-WMj3Fe4bMPkNcx_a3RnRD9oWnEsZ6F",
+      "sha256": "febb44a788cd4bbcf3273dda5646fd14b5b453bdc89c5018ca053e68785d0347",
+      "bytes": 2816
+    },
+    {
+      "path": "angular_velocities/2024-usopen-1164_pt0013_srv2.npy",
+      "id": "1TcnIaXvsqeMoi190Wc76OV0aW_X3-Zp7",
+      "sha256": "47fcdee5387a16ffd02ed05c6eb20e2987c785fee508f0770942a1dbadb74578",
+      "bytes": 2592
+    },
+    {
+      "path": "angular_velocities/2024-usopen-2101_pt0003_srv1.npy",
+      "id": "1ESFXBp5FjhrvnGZ0-cRtG4xM5akPvlNv",
+      "sha256": "0e06007d79b2af2e0fa4a2f3fe5b0656fa67c4c4431be93a83adc283ea849e8b",
+      "bytes": 2976
+    }
+  ]
+}

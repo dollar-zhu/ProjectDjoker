@@ -1,0 +1,7 @@
+filename,match_id,server,returner,gender,height_cm,point_number,point_winner,serve_number,speed_kmh,serve_width,serve_depth,return_depth,n_frames,duration_sec,quality_label,ace,rally_count,set_no,game_no
+2024-usopen-1164_pt0004_srv1.npy,2024-usopen-1164,Novak Djokovic,Radu Albot,M,188,4,1,1,183,BW,NCTL,ND,79,1.3167,3.0,0,1,1,1
+2024-usopen-1164_pt0008_srv1.npy,2024-usopen-1164,Novak Djokovic,Radu Albot,M,188,8,2,1,189,C,NCTL,ND,84,1.4,3.0,0,5,1,2
+2024-usopen-1164_pt0013_srv2.npy,2024-usopen-1164,Novak Djokovic,Radu Albot,M,188,13,1,2,143,BW,NCTL,D,77,1.2833,2.0,0,1,1,3
+2024-usopen-1101_pt0001_srv1.npy,2024-usopen-1101,Jannik Sinner,Mackenzie McDonald,M,191,1,1,1,180,W,CTL,,88,1.4667,1.0,1,1,1,1
+2024-usopen-2101_pt0001_srv1.npy,2024-usopen-2101,Kamilla Rakhimova,Iga Swiatek,F,170,1,1,1,154,BW,NCTL,ND,89,1.4833,3.0,0,12,1,1
+2024-usopen-2101_pt0003_srv1.npy,2024-usopen-2101,Kamilla Rakhimova,Iga Swiatek,F,170,3,1,1,143,W,CTL,ND,89,1.4833,3.0,0,2,1,1
