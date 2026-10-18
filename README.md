@@ -1,188 +1,206 @@
-# Project Djoker
+# Project Djoker: an on-device tennis serve coach
 
-Tennis serve reference analysis for a two-day coaching hackathon. Includes a reproducible six-serve smoke pipeline and an analysis of all **88 Novak Djokovic serves** in the published Tennis Serve Analysis Dataset.
+Film a serve. A few seconds later, Djoker shows your skeleton next to Djokovic's or Sinner's at the same phase of the motion and gives **one** practice focus, grounded in your own measured angles. Pose estimation and language generation run through **ExecuTorch on the Qualcomm Hexagon NPU** of an Arduino VENTUNO Q. No video leaves the device, and the app needs no internet connection on court.
 
-## Verified results
+> **Demo video:** submitted through the hackathon portal · **Track:** IoT (Arduino VENTUNO Q, Qualcomm Dragonwing QCS8275)
 
-- Dataset metadata: 5,966 serves, 109 players, 113 matches.
-- Djokovic cohort: 88 serves, 75 first serves and 13 second serves, across three matches; 7,329 frames.
-- Eight derived joint-angle trajectories with means, sample standard deviations, and pointwise 10th–90th percentile bands.
-- Estimated loading, drive/upward-swing, and follow-through phases.
-- Animated mean pose and angle plots, plus interactive group selection and playback.
+<p align="center"><img src="docs/media/serve1_overlay.gif" width="420" alt="RTMPose skeleton tracking a real serve: left side blue, right side orange, live knee and elbow angles"></p>
 
-![Reference analysis](reference/preview.png)
+## Why this matters
 
-## Setup and run
+Most recreational players never get a coach to watch their serve, and generic video apps either upload footage to the cloud or give vague feedback. Djoker gives players a fixed camera and a small board that:
 
-Tested with Python 3.14 on macOS Apple Silicon. Dependencies are pinned.
+- **Watches a real physical action**: a full-body serve, filmed from behind or the side.
+- **Closes the loop between serves**: capture → NPU pose → serve phases → comparison with a pro reference → one cue → overlay replay.
+- **Keeps inference on the device** for three reasons:
+  1. **Privacy**: the footage shows identifiable people, often minors at clubs and schools. Raw video stays on the board and laptop by default; nothing is uploaded.
+  2. **Connectivity**: tennis courts often have poor or no Wi-Fi. Nothing calls a cloud API.
+  3. **Latency and cost**: RTMPose takes **6.45 ms/frame on the NPU** versus 27.9 ms on the board's fastest CPU configuration, so a 4-second serve clip is analyzed in well under a second of model time with no per-use fee.
 
-```sh
-sh setup.sh
-.venv/bin/python reference/analyze.py \
-  --source reference/source \
-  --out reference/results \
-  --accept-provisional-h36m
+Feedback is deliberately conservative. Deterministic rules choose the fault and the direction of the fix. The on-device LLM only rephrases an approved cue, and a validator rejects anything it adds. When the camera angle or tracking quality does not support a comparison, Djoker says so instead of guessing.
+
+## How it works
+
+```mermaid
+flowchart LR
+    subgraph HOST["Host laptop (local UI and orchestration)"]
+        UI["Next.js app<br/>upload · live capture · overlay replay"]
+        PROC["Python processor<br/>crop, decode, serve phases,<br/>pro comparison, rules, validator"]
+    end
+    subgraph LINUX["VENTUNO Q · Linux (QCS8275)"]
+        CAM["USB camera<br/>/dev/video0 via ffmpeg"]
+        subgraph NPU["Hexagon NPU · ExecuTorch QNN backend"]
+            POSE["RTMPose-m fp16 .pte<br/>6.45 ms/frame"]
+            LLM["Gemma 3 1B .pte<br/>~30 tok/s decode"]
+        end
+    end
+    subgraph MCU["VENTUNO Q · STM32H5 MCU (planned)"]
+        BTN["record/complete button"]
+        LED["LED / buzzer result"]
+    end
+    CAM -- "JPEG stream over adb" --> UI
+    UI --> PROC
+    PROC -- "256×192 crops" --> POSE
+    POSE -- "133-keypoint SimCC tensors" --> PROC
+    PROC -- "measured evidence + approved cue" --> LLM
+    LLM -- "rephrased cue (validated)" --> PROC
+    PROC --> UI
+    BTN -. "Bridge RPC: serve_done" .-> PROC
+    PROC -. "Bridge RPC: show_result" .-> LED
 ```
 
-All 88 source pose arrays and metadata are included, so analysis works offline after dependency installation. `--download` retrieves missing files from the public source; without `--allow-partial`, analysis refuses an incomplete cohort.
+**Where Linux inference ends and MCU control begins.** All ML inference (pose and language) runs on Linux, on the NPU, through ExecuTorch. The STM32H5 is reserved for hard real-time physical I/O: the button that marks a finished serve, and an LED or buzzer that shows the result. These go through the Arduino Router Bridge (MsgPack-RPC). The MCU never runs a model, and Linux never toggles GPIO directly. **The MCU link is not implemented yet** (dashed lines); today recording is started by a raised-hand ready gesture (or **Start recording**) and ended by automatic follow-through detection (or **Stop & analyse**), and the result appears on screen. See [docs/executorch-npu.md §4](docs/executorch-npu.md#4-linux--mcu-boundary).
 
-For the original six-serve smoke test:
+### The input-to-action loop
 
-```sh
-.venv/bin/python smoke/pipeline.py run --layout h36m
-```
+1. **Capture:** upload a phone clip, or use the board's USB camera. In the default hands-free mode, the player raises a hand to arm recording, gets a 3-2-1 countdown, serves on **GO**, and recording stops on its own after the follow-through.
+2. **Pose on the NPU:** each frame is cropped to the player and run through `rtmpose_qnn_fp16_QCS8275.pte` by `qnn_executor_runner` on the Hexagon HTP.
+3. **Serve phases:** loading (deepest knee bend) and reach (highest hitting wrist) are detected from the 2D skeleton.
+4. **Compare:** a Djokovic (88 serves) or Sinner (219 serves) pose sequence, rotated into the same rear view, is time-aligned to your motion phase by phase (anchored at loading and reach) and overlaid on your video at quarter speed. An experimental 0–100 body-similarity score summarizes how closely twelve torso and limb joints follow the selected pro serve.
+5. **One cue:** a rule picks one practice focus from the knee angles at loading. Gemma 3 1B on the NPU rephrases it, a validator checks the reply, and the template is used if the reply fails.
 
-## DMS interchange contract
+## See it work
 
-The [DMS v0.1 specification](docs/dms-v0.1.md) defines canonical17, eight explicit angle definitions, timestamps, confidence semantics, and fail-closed event comparisons. It includes a MediaPipe image-output adapter and a provisional Djokovic exporter. Neither adapter invents missing timestamps, confidence, or mapping validation.
+Artifacts from one real amateur serve (`serve1`) processed end to end, then the pro reference it is compared against. The serve is a short excerpt from [*Mens 4.5 ntrp tennis match court level highlights, USOpen John vs Tennis Viking*](https://www.youtube.com/watch?v=0genZFgM61E&t=4s) by [USOpen John](https://www.youtube.com/@usopenjohn3725) on YouTube. It is used here only to demonstrate the analysis; all rights remain with the creator.
 
-```sh
-.venv/bin/python -m dms export-reference --out dms-reference
-.venv/bin/python -m unittest discover -s tests -p "test_dms.py" -v
-```
+| | |
+|---|---|
+| <img src="docs/media/serve1_overlay.gif" width="380" alt="Skeleton overlay on a serve"> | **Pose tracking on a real serve.** RTMPose 2D skeleton per frame (blue = left side, orange = right side) inside the player crop (yellow), with the measured left/right knee and hitting-elbow angles printed live. Full-quality clip: [`serve1_overlay.mp4`](docs/media/serve1_overlay.mp4). |
+| <img src="docs/media/serve1_keyframes_lr_check.jpg" width="380" alt="Six keyframes with labelled wrists and knees"> | **Left/right sanity check.** Six keyframes from setup through trophy, contact and landing, with wrists and knees labelled. We check that left and right never swap before trusting any joint angle. |
+| <img src="docs/media/serve1_knee_vs_djokovic.png" width="380" alt="Knee angle curves vs Djokovic band"> | **Comparison with Djokovic.** Knee angles around the deepest bend (orange) against Djokovic's median and 10th–90th percentile band over 82 serves (blue). The reference is projected into the same 30° camera view. Here the front knee bends less than Djokovic's (115° vs 103°) and the back knee more (105° vs 120°). The coach turns this into one spoken cue. Actual output for this serve (demo mode, `--allow-unvalidated-reference`): *"Score 81. Good leg drive. Sink into your front knee, not your back knee."* |
+| <img src="reference/preview.png" width="380" alt="Djokovic 88-serve reference analysis"> | **The pro reference.** 88 Djokovic serves from the UVA Tennis Serve Analysis Dataset: mean pose, eight joint-angle trajectories with percentile bands, and estimated phases ([animated GIF](reference/djokovic-88-serves.gif), [interactive page](visualization/index.html)). A 219-serve Sinner reference is in `sinner/`. |
+| <img src="demo/ventuno-pose/proof/overlay_qnn_vs_ort.png" width="380" alt="NPU vs CPU keypoints overlaid"> | **The NPU gives the same skeleton.** RTMPose keypoints from ExecuTorch QNN on the Hexagon NPU (green) against onnxruntime fp32 (orange) on 20 serve crops: 0.24 px mean error, PCK@0.05 = 1.000. |
 
-Djokovic packets are structurally valid but are rejected for comparison until anatomical mapping and essential compatibility conditions are validated.
+The `serve1` images were produced by the CPU development path (`pose2d` + `compare2d`, onnxruntime), which runs the same 2D event detection and comparison as the board. The knee comparison is labelled *unvalidated*: the rules are draft values, and the camera-angle estimate and joint mapping have no validation record yet (see [docs/pipeline.md](docs/pipeline.md)).
 
-## Video → 2D skeleton (RTMPose)
+## ExecuTorch and NPU evidence
 
-`pose2d/` runs RTMPose-m (body7, 256×192, ONNX from OpenMMLab) on a video with a fixed operator crop: no person detector. Preprocessing follows the model's own `pipeline.json` (1.25 padding, aspect-fixed affine, **BGR→RGB**, ImageNet mean/std, SimCC split 2.0). The model is downloaded once to `models/` and checked against pinned SHA-256 hashes.
+The claims below are backed by profiling, not by a successful model load. Full write-up: **[docs/executorch-npu.md](docs/executorch-npu.md)**.
 
-```sh
-.venv/bin/pip install -r requirements-pose.txt
-.venv/bin/python -m pose2d.video path/to/serve.mov --crop x1,y1,x2,y2 --out runs/dev/<shot> \
-  --shot-id <shot> --handedness right --camera-view <label>
-.venv/bin/python -m unittest tests.test_pose2d -v
-```
+| RTMPose-m on the VENTUNO Q | Per frame | Peak RSS | Accuracy vs fp32 (PCK@0.05) |
+|---|---|---|---|
+| **ExecuTorch QNN, HTP fp16 (NPU)** | **6.45 ms** (4.49 ms hot loop) | **50 MB** | **1.000** |
+| ExecuTorch XNNPACK int8, CPU (8 threads) | 27.9 ms | 41 MB | 0.995 |
+| ExecuTorch XNNPACK fp32, CPU (4 threads) | 85.9 ms | 140 MB | 1.000 |
 
-Each run writes `dms/` (a validated DMS packet: canonical17 pixel xy, `projected_2d` angles, observed timestamps in seconds), `rtmpose_native.npz` (unclipped raw output and crop), `run.json` (video/model hashes, preprocessing, provider, timings, score summary), `contact_sheet.jpg` and `overlay.mp4`. Choose the crop so the player stays inside it for the whole motion and other people stay out.
+- **ETDump profile** ([`qnn_fp16_etdump_ops.csv`](demo/ventuno-pose/proof/qnn_fp16_etdump_ops.csv)): **300 of 302** execute events are QNN-delegated. The other two are the `Method::execute`/`DELEGATE_CALL` wrappers, so **no operator falls back to the CPU**. The HTP timers show 4.17 ms of accelerator execution and 6.81 M cycles per inference on 4 HVX threads.
+- **Real footage:** 230/230 frames from three tennis clips ran on the NPU at a 4.46 ms/crop mean (p95 4.73 ms).
+- **Gemma 3 1B (ExecuTorch QNN):** 508–627 tok/s prefill, ~30 tok/s decode, 59–65 ms time to first token.
+- **How it was built:** ONNX → `onnx2torch` → static-shape rewrite → `torch.export` → `to_edge_transform_and_lower_to_qnn` on the board with a QCS8275 (HTP v75) chipset entry we added to ExecuTorch 1.5.0. Scripts are in [`demo/ventuno-pose/et/`](demo/ventuno-pose/et/).
 
-Scores are raw SimCC peak responses (mean of x/y), which can exceed 1. The DMS copy clips them to [0,1]; they are not calibrated probabilities. Joints are still emitted when occluded, with lower scores, so downstream gates must use confidence. This is a development-host run, not board inference.
+## Team
 
-## 2D comparison against Djokovic (knee loading)
+**Team Djoker**
 
-The board runs only 2D pose, so the 3D reference is brought to 2D offline. `compare2d.reference` rotates each Djokovic serve into level orthographic cameras from −90° to +90° around the profile view. 0° looks along the hip line at the deepest knee bend, i.e. a camera behind the server. It then runs the **same** 2D event detector the live path uses and stores both knee angles at the deepest bend, per view angle. `compare2d.compare` estimates the live camera's view angle from apparent hip width, picks the matching reference slice, and applies the gates.
+| Name | Email |
+|---|---|
+| Dollar Zhu | dollarzhu.bizz@gmail.com |
+| Jed Ng | _TODO_ |
+| Lohith Artham | _TODO_ |
 
-```sh
-.venv/bin/python -m compare2d.reference            # writes reference/projected2d/
-.venv/bin/python -m compare2d.compare runs/dev/<shot>/dms/<shot>.json --out runs/dev/<shot>/compare [--serve-type 1|2]
-.venv/bin/python -m unittest tests.test_compare2d -v
-```
+## Repository layout
 
-- **Source chirality:** the source poses are mirror images. The export matches mmpose's demo transform, which is a reflection: nose and knee directions disagree with the hip-implied facing in 86/88 serves. x is negated before projecting. Interior angles are unaffected.
-- **Events:** loading = minimum smoothed mean knee angle before the highest right wrist. If the knees keep bending after that wrist peak, the serve is excluded rather than guessed (6 of 88 Djokovic serves). At the profile view, the 2D loading frame matches the 3D estimate within ±2 frames in 82/82 remaining serves.
-- **View:** the ±30° band keeps the projected knee angle near its 3D value. Square-on views (≈90°) read almost straight legs and are rejected. On reference data, the hip-width view estimate is within about ±7° at 15–45°. Live COCO hip landmarks add unmeasured error.
-- **Outputs:** `comparison.json` is the production result. It stays `insufficient_evidence` with null deltas until validation records exist: provisional joint mapping, unvalidated events and camera profile, and unknown serve type. `diagnostic.json` and `knee_vs_djokovic.png` hold the unvalidated measurements.
+| Path | What |
+|---|---|
+| `web/` | Next.js app and Python processor: upload, live capture, NPU pose, overlay replay, on-board commentary ([web/README.md](web/README.md)) |
+| `demo/ventuno-pose/et/`, `demo/ventuno-pose/proof/` | ExecuTorch export scripts and committed NPU profiling evidence |
+| `live/`, `coaching/`, `compare2d/`, `pose2d/`, `dms/` | Pip-installable CLI coach (`djoker-run`): camera → pose → serve packet → rules → Piper speech ([docs/pipeline.md](docs/pipeline.md)) |
+| `reference/`, `sinner/` | Djokovic (88) and Sinner (219) pro-serve references from the UVA Tennis Serve Analysis Dataset |
+| `benchmark/manual/` | Manually reviewed development clips and the 230-frame NPU run |
+| `docs/` | [ExecuTorch/NPU evidence](docs/executorch-npu.md), [pipeline reference](docs/pipeline.md), [board port](docs/board-port.md), [DMS v0.1 data contract](docs/dms-v0.1.md) |
 
-## Board feedback decision and Qwen phrasing
+## Dependencies
 
-`coaching/board_feedback.py` is what the device runs after a serve. It reads a DMS packet, `reference/projected2d/board_reference.json` (50 KB lookup table) and `coaching/rules.json`, and needs only numpy. It selects at most one cue, plus optional praise, deterministically by priority. By default the Djokovic-relative rules are blocked because no validation records exist, and it falls back to a descriptive observation. `--allow-unvalidated-reference` enables them for demos, and the output is labelled as such.
+**Host (macOS or Linux):** Python 3.10+ (tested on 3.14), Node.js 20.9+ with npm, `ffmpeg`/`ffprobe`, and `adb` (Android platform-tools) to reach the board. Python packages are pinned in `requirements.txt` (analysis: numpy, pandas, matplotlib, …) and `requirements-pose.txt` (OpenCV, onnxruntime, piper-tts); `setup.sh` installs both. Web dependencies are pinned in `web/package-lock.json` (Next.js 16, React 19).
 
-```sh
-.venv/bin/python -m coaching.board_feedback decide runs/dev/serve1/dms/serve1.json --out runs/dev/serve1/board_demo --allow-unvalidated-reference
-# Any OpenAI-compatible Qwen server (Ollama shown); set "model" in qwen_request.json to your Qwen tag
-curl -s http://localhost:11434/v1/chat/completions -H 'Content-Type: application/json' -d @runs/dev/serve1/board_demo/qwen_request.json \
-  | .venv/bin/python -c 'import json,sys; print(json.load(sys.stdin)["choices"][0]["message"]["content"])' \
-  | .venv/bin/python -m coaching.board_feedback validate runs/dev/serve1/board_demo/feedback.json -
-```
+**Board (Arduino VENTUNO Q):** Ubuntu 24.04 aarch64 with the system QAIRT 2.49 libraries (`libqnn1`, `qairt-libs`, `qairt-dsp-binaries`), `ffmpeg`, an ExecuTorch build with `EXECUTORCH_BUILD_QNN=ON` (provides `qnn_executor_runner` and `qnn_llama_runner`), and the model files:
 
-Qwen only rephrases. `validate` accepts its speech only if it is ≤25 words, uses only the player's own measured numbers, introduces no body part or action outside the approved text, and avoids injury, speed, racket and guarantee claims. Otherwise it returns the canonical text. Rule thresholds are draft values awaiting review.
+| File on the board | How to get it |
+|---|---|
+| `~/models/et/rtmpose_qnn_fp16_QCS8275.pte` (38.8 MB) | Export with [`demo/ventuno-pose/et/`](demo/ventuno-pose/et/README.md) |
+| `~/models/gemma3-1b_qcs8275_ctxt-5000/{*.pte, tokenizer.json}` | Qualcomm IoT track model bundle |
 
-## Djokovic match score
+Model binaries and SDKs are not committed (size and licensing). Paths are set at the top of `web/processor/worker.py` and `web/processor/commentary.py`.
 
-Every serve that passes the reference gates gets a 0–100 **Djokovic match score** (`coaching/rating.json`, `coaching/rating.py`). Eleven measurements are scored. Each gets 100 inside Djokovic's typical band at the matched camera view and falls linearly to 0 at a set distance outside it. The total is a weighted mean, itemized in `feedback.json`, with a score range for ±10° of camera-angle error.
+**No board?** The app falls back to onnxruntime on the host CPU. Set `DJOKER_ONNX` to the RTMPose-Body2d ONNX export (133 keypoints). The demo is then fully functional, but no inference runs on the NPU.
 
-| Group | Metrics (weight) | Band |
-|---|---|---|
-| Legs, 65% | front knee (17), back knee (17) at the deepest bend; bend timing (10); push-up timing (6); leg-drive speed (10); drive-to-contact timing (5) | 10th–90th percentile |
-| Trophy, 15% | hitting-elbow lift (upper arm vs trunk) at the deepest bend (10); toss-hand height (5) | 25th–75th / 10th–90th |
-| Arm–leg timing, 8% | how early the hitting elbow folds before the deepest bend | 25th–75th |
-| Contact, 12% | elbow extension (7); hand height (5) at the highest-wrist contact proxy | 10th–90th |
-
-**Not measured, and why:**
-- **Racket-drop depth:** trophy and drop folds look alike in 2D from behind, and the reference is unstable in that phase.
-- **Pronation:** it finishes within ~10 ms, the body skeleton has no hand orientation, and the reference has no hand or racket data.
-- **Racket path and ball:** no racket or ball tracking.
-
-Each serve speaks one cue, selected by priority. Other matching findings (e.g. trophy elbow, arm timing) are recorded as `secondary_findings`.
-
-The score measures similarity to one reference player, **not** quality: the PRD lists quality scores as out of scope, so its wording needs updating if this ships. It is withheld on retries, when under 60% of the weight was measured, and whenever Djokovic-relative feedback is blocked (including strict mode). Weights and thresholds are draft values.
-
-## Board package
-
-`pip install .` provides `djoker-run`, `djoker-check` and `djoker-feedback`, with runtime dependencies numpy, OpenCV (headless) and onnxruntime only. `pip install '.[tts]'` adds Piper speech. `scripts/build_bundle.py` builds an offline board tarball containing the model, reference table, rules, config and scripts. Readiness, the module map and porting steps are in [docs/board-port.md](docs/board-port.md). `djoker-check` compares the device against private golden fixtures from one of your own clips (`scripts/make_golden.py --video clip.mov --crop x1,y1,x2,y2` → `local/golden/`, git-ignored). They are never committed because they contain a real player.
-
-## Run the coach: webcam or saved video
-
-Both sources go through the same path: `live/camera.py` (frame source), `live/pose.py` (RTMPose, no detector), `live/session.py` (6 s pose buffer, trigger, DMS packet, rule engine, optional Qwen), and `live/audio.py`.
+## Setup
 
 ```sh
-# Saved video: one serve per clip; analyzes the last 4 s once at the end (warns if the clip is longer)
-.venv/bin/python scripts/run_live.py --source path/to/serve.mov --allow-unvalidated-reference   # config/dev.json
-
-# Webcam (laptop camera = webcam, USB/UVC phone on the board = webcam:/dev/video0): press Enter right after each serve
-.venv/bin/python scripts/run_live.py --source webcam --audio say --allow-unvalidated-reference
+git clone https://github.com/dollar-zhu/ProjectDjoker.git && cd ProjectDjoker
+sh setup.sh                                   # .venv with pinned analysis + pose/speech dependencies
+cd web && npm ci                               # web dependencies
 ```
 
-- **One serve per analysis:** a saved clip should contain one serve; it is analyzed once at the end. Longer clips print a warning and analyze only the last `analysis.window_s` seconds. On the webcam, trigger once after each serve. There is no automatic serve detection; for an existing multi-serve video, pass `--trigger-at` with the end time of each serve.
-- **Crop:** without `--crop`, the next crop comes from the previous frame's confident keypoints, falling back to the full frame when tracking is lost. On Serve1 it locked onto the server from the second frame and produced the same decision as the hand-set crop. Use `--crop x1,y1,x2,y2` for a fixed setup.
-- **Optional flags:** `--qwen-url http://localhost:11434/v1/chat/completions --qwen-model <tag>` adds Qwen rephrasing (1 s timeout, then canonical text). `--audio wav` plays `audio/<SPEECH_CODE>.wav` when present.
-- **Voice:** `--audio piper` speaks offline with [Piper](https://github.com/OHF-Voice/piper1-gpl) neural TTS. It runs on the onnxruntime we already ship. The default voice `en_US-joe-medium` (63 MB, CC0 voice data) synthesizes a 5 s sentence in about 60 ms on the dev host; the voice loads once at startup (~0.6 s). Download it once with `.venv/bin/python -c "from live.audio import fetch_voice; fetch_voice()"` (checked against a pinned SHA-256). Choose another voice with `--voice <file>.onnx` or `audio.voice`. If the package, voice or player is missing, it falls back to `say`/`espeak-ng`, then text. piper-tts is GPL-3.0-or-later, so it is an optional extra (`djoker[tts]`).
-- **Outputs:** each shot writes `runs/<session>/<shot>/` (DMS packet, raw RTMPose output, `feedback.json`, `speech.json`). Each session writes `timings.jsonl` and `health.jsonl`. Raw video is never recorded. Saved-video sessions are labelled `replay`.
-- **Board:** the Enter key stands in for the physical completion button (`Session.trigger`).
-
-## View the animation
-
-Open `visualization/index.html` in a browser. The interactive charts require the pinned D3 library from jsDelivr. The source fragment is `visualization/djokovic-88-serves.fragment.html`.
-
-The self-contained [animated GIF](reference/djokovic-88-serves.gif) works without JavaScript or internet access. Read [methods and limitations](reference/README.md) for interpretation.
-
-## Tests
-
-From the repository root:
+Connect the VENTUNO Q over USB and confirm `adb devices` lists it. The default serial is `242692658`; override it with `DJOKER_SERIAL`. For on-device speech in the CLI coach, download the Piper voice once:
 
 ```sh
-(cd reference && ../.venv/bin/python -m unittest test_analysis -v)
-(cd smoke && ../.venv/bin/python -m unittest discover -s tests -v)
-node tests/test_visual_runtime.cjs
+.venv/bin/python -c "from live.audio import fetch_voice; fetch_voice()"
 ```
 
-The visualization regression harness reproduces the former negative-array-index error and checks frame timing, pause/replay, scrubbing, group/alignment changes, and restored state. It uses lightweight DOM/D3 test doubles; it is not a browser rendering test.
+## Usage
 
-## Layout
-
-- `reference/source/`: 88 source pose arrays, full metadata, and Drive IDs.
-- `reference/results/`: raw and aligned trajectories, phase estimates, distribution statistics, and SHA-256 manifest.
-- `reference/analyze.py`: cohort analysis.
-- `reference/render_gif.py`: animation renderer using the included `visual_data.json` snapshot.
-- `smoke/`: original six-serve end-to-end sample.
-- `visualization/`: corrected interactive visualization and standalone preview.
-- `tests/`: playback regression checks.
-
-## Known limitations
-
-The dataset documentation identifies COCO joints, while observed geometry suggests MotionBERT's H36M ordering. **H36M remains provisional** and requires explicit acknowledgement when running analysis. Body poses do not provide ball or racket tracking. Phase boundaries are heuristic body-landmark estimates, not confirmed contact or racket-drop events.
-
-All 88 serves have at least one abrupt derived-angle jump. Variation includes tracking noise and phase-alignment uncertainty. No serves are silently excluded. The mean pose is a statistical display; its geometric angles need not equal the independently averaged joint angles. This project does not yet accept user video or generate validated coaching advice.
-
-## Source and attribution
-
-Dataset: Jason Wang et al., *Large-Scale 3D Pose Estimation of Professional Tennis Serves from Broadcast Video*, University of Virginia, 2026.
-
-- Repository: https://github.com/jasnwag/tennis_serve_dataset
-- Inspected commit: `7889457cc9b50b0c2a9fdcc81d786bcdb6b8652c`
-- Dataset release: https://drive.google.com/drive/folders/1Wr7UjMvgLwgqCQ09wSaw94ozvRYRO8fB
-- Dataset license: CC BY 4.0, reproduced in [DATA_LICENSE](DATA_LICENSE).
-
-This project adds sample selection, derived angles, estimated phases, normalization, statistical summaries and visualizations. The dataset license applies to the source data; no separate license is assigned here to newly authored project code.
-
-## Local serve review interface
-
-The Next.js app supports video upload, manual player selection, RTMPose processing on Ventuno or the Mac CPU, and timestamped skeleton playback with evidence-linked observations. See [web/README.md](web/README.md) for dependencies, setup and tests.
+### 1. Serve review app (main demo)
 
 ```sh
 cd web
-npm ci
-npm run dev -- --hostname 127.0.0.1 --port 3017
+DJOKER_PYTHON="$PWD/../.venv/bin/python" npm run dev -- --hostname 127.0.0.1 --port 3017
 ```
 
-Manual development cases and source timestamps are documented in [benchmark/manual/README.md](benchmark/manual/README.md). They are provisional examples, not a held-out accuracy benchmark. Videos, model files and generated reviews remain local.
+Open http://127.0.0.1:3017. The status badge reads **Ventuno connected** (pose runs on the NPU) or **Mac CPU available** (fallback). Each review reports the backend and the mean model time per frame.
+
+- **Upload a clip:** drop a phone video of one serve (MP4/MOV, 0.5–20 s), draw a box around your player, set the camera view (**Behind the server** for pro comparison) and hitting hand, then **Process serve**. The review shows the timestamped skeleton, loading/reach moments and quality checks.
+- **Compare with a pro:** pick Novak Djokovic or Jannik Sinner. The **Experimental body similarity** panel shows a 0–100 score, joint coverage, and which body regions were compared. **Overlay Djokovic · 0.25×** plays the reference skeleton (dashed blue) over your video, following your pace within each phase.
+- **Get one cue:** **Analyse with Gemma** sends the measured evidence and approved cue to Gemma 3 1B on the NPU. The UI labels whether the text came from the model or the template fallback, and whether a model reply was rejected.
+- **Live camera:** with a USB webcam on the board, click **Start camera**. In **Ready gesture · automatic capture** (default), stand fully in frame, raise either hand to shoulder height for about 0.75 s, lower it during the **3 → 2 → 1** countdown, serve on **GO**, and stay in frame through the follow-through. The clip goes straight to review. **Manual recording** (**Start recording**, serve, **Stop & analyse**) is available for debugging.
+
+Environment variables: `DJOKER_BACKEND=cpu` forces the host CPU, `DJOKER_ONNX=<path>` sets the CPU model, `DJOKER_SERIAL=<serial>` selects the board. Details: [web/README.md](web/README.md).
+
+### 2. Verify NPU execution yourself
+
+On the board (see [docs/executorch-npu.md §2](docs/executorch-npu.md#2-how-the-pte-files-were-produced)):
+
+```sh
+export LD_LIBRARY_PATH=$HOME/git/executorch/build-x86/backends/qualcomm:/usr/lib ADSP_LIBRARY_PATH="/usr/lib/dsp/cdsp;/usr/lib"
+~/git/executorch/build-x86/examples/qualcomm/executor_runner/qnn_executor_runner \
+  --model_path ~/models/et/rtmpose_qnn_fp16_QCS8275.pte --input_list_path list.txt \
+  --output_folder_path out --iteration 1 --warm_up 2 --profile_level 2 --etdump_path qnn_fp16.etdp
+```
+
+From the host: `demo/ventuno-pose/et/.venv-et/bin/python demo/ventuno-pose/et/bench_board.py qnn_fp16 xnnpack_int8` reruns the latency/memory comparison, and `proof_report.py` reruns the accuracy check.
+
+### 3. CLI coach with spoken feedback
+
+```sh
+.venv/bin/python scripts/run_live.py --source path/to/serve.mov --audio piper --allow-unvalidated-reference
+.venv/bin/python scripts/run_live.py --source webcam --audio piper --allow-unvalidated-reference   # press Enter after each serve
+```
+
+This path uses onnxruntime for pose and Piper TTS for speech. Its scoring, rules and outputs are described in [docs/pipeline.md](docs/pipeline.md).
+
+## Tests
+
+```sh
+(cd web && npm test)                                                   # TypeScript contracts, overlay, playback, API
+(cd web/processor && ../../.venv/bin/python -m unittest discover -p 'test_*.py')
+.venv/bin/python -m unittest discover -s tests -v                      # DMS, pose, comparison, coaching, live
+(cd reference && ../.venv/bin/python -m unittest test_analysis -v)
+node tests/test_visual_runtime.cjs
+```
+
+## Limitations
+
+- **2D, one camera.** Comparisons are valid only in a rear or near-rear view. The 3D pro references are projected into that view; they are not original rear-camera recordings.
+- **Draft coaching content.** Rules and thresholds are draft values, not yet validated with coaches or players. The body-similarity score measures similarity to one selected pro serve, not serve quality, and the capture triggers are experimental heuristics, not verified ball-contact detection.
+- **No ball or racket tracking.** Contact is estimated from the highest wrist position; toss, racket drop and pronation are not measured.
+- **NPU precision.** The NPU model is fp16. int8 has been measured only on CPU (XNNPACK).
+- **Split inference in live mode.** In live capture, the host CPU runs continuous tracking to decide when a serve starts and ends; the recorded serve is then analyzed on the NPU.
+- **MCU** button/LED integration is designed but not implemented.
+
+## License
+
+Code is released under the [MIT License](LICENSE). The ExecuTorch serialization files in `demo/ventuno-pose/et/boardsrc/` are modified copies of upstream ExecuTorch and keep their original BSD-style license headers. Optional speech uses [piper-tts](https://github.com/OHF-Voice/piper1-gpl) (GPL-3.0-or-later); it is installed only with the `djoker[tts]` extra and is not part of the MIT-licensed code.
+
+Footage: the `serve1` media in `docs/media/` are derived from [a YouTube video by USOpen John](https://www.youtube.com/watch?v=0genZFgM61E&t=4s) and are not covered by the MIT License; all rights remain with the creator.
+
+Data: the pro-serve references are derived from the Tennis Serve Analysis Dataset (Jason Wang et al., *Large-Scale 3D Pose Estimation of Professional Tennis Serves from Broadcast Video*, University of Virginia, 2026; [repository](https://github.com/jasnwag/tennis_serve_dataset), inspected commit `7889457c`). The dataset is CC BY 4.0, reproduced in [DATA_LICENSE](DATA_LICENSE). This project adds sample selection, derived angles, estimated phases, rear-view projection, statistical summaries and visualizations.

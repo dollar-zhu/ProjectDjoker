@@ -49,3 +49,6 @@ local/
 *.mp4
 .venv-et/
 demo/ventuno-pose/et/onnx/
+
+# Curated README media
+!docs/media/*.mp4
