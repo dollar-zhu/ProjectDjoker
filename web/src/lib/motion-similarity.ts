@@ -26,7 +26,9 @@ const torso=(p:PoseFrame)=>dist(mid(p.xy[5],p.xy[6]),mid(p.xy[11],p.xy[12]));
 const anchors=(p:PoseFrame)=>[5,6,11,12].every(i=>visible(p,i))&&torso(p)>10;
 const unavailable=(reason:string):MotionSimilarity=>({status:'unavailable',reason});
 // The 0.6 torso-length falloff is a provisional display scale, not an accuracy calibration.
-const displayScore=(distance:number)=>Math.round(100*Math.exp(-distance/.6));
+// Display scale, not a calibrated accuracy. 1.75 maps the 0.4–0.7 distances
+// typical of amateur serves to roughly 65–80; identical motion still scores 100.
+const displayScore=(distance:number)=>Math.round(100*Math.exp(-distance/1.75));
 
 /** Does not extrapolate an aligned serve into walk-in, walk-out, or unobserved footage. */
 export function referencePhaseAt(alignment:MotionAlignment,time:number):number|null {

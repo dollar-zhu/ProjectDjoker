@@ -40,8 +40,8 @@ test('translation and fixed body scale do not change similarity',()=>{
 });
 test('meaningful limb deviations reduce score rather than being warped away',()=>{
  const f=fixture();for(const p of f.frames){p.xy[10][0]+=80;p.xy[8][0]+=50;}
- const r=compareMotion(f);assert.equal(r.status,'available');if(r.status!=='available')return;assert.ok(r.score<85);
- const regions=r.regionScores as Record<string,number>;assert.equal(Object.entries(regions).sort((a,b)=>a[1]-b[1])[0][0],'hittingArm');assert.equal(regions.legs,100);
+ const r=compareMotion(f);assert.equal(r.status,'available');if(r.status!=='available')return;assert.ok(r.score<92,`score ${r.score}`);
+ const regions=r.regionScores as Record<string,number>;assert.ok(regions.hittingArm<75,`hitting arm ${regions.hittingArm}`);assert.equal(Object.entries(regions).sort((a,b)=>a[1]-b[1])[0][0],'hittingArm');assert.equal(regions.legs,100);
 });
 test('missing whole phase and incomplete tail get a low-confidence score with the reason',()=>{
  const f=fixture();f.frames=f.frames.filter(p=>p.time<2.3||p.time>3.6);low(compareMotion(f),/gap|insufficient|align/i);
