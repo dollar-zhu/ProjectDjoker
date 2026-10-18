@@ -33,7 +33,8 @@
   },
   "audio": {
     "backend": "print",
-    "wav_dir": "../audio"
+    "wav_dir": "../audio",
+    "voice": "../models/piper/en_US-joe-medium.onnx"
   },
   "session": {
     "cooldown_s": 2.0,

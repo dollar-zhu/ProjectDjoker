@@ -13,7 +13,7 @@ Status as of 17 Oct 2026. "Verified" means run and checked on the development ho
 | Serve segmentation | By design | One serve per trigger (webcam) or per clip (saved video). Clips longer than the 4 s window log `clip_longer_than_window`. No automatic detection. |
 | Completion trigger | Stand-in | Enter key → `Session.trigger(ms)`. **Physical button not wired.** |
 | Analysis, comparison, rules | Ready (draft content) | Deterministic and golden-checked. Rules are `draft_unreviewed`. The reference is unvalidated, so strict mode gives an observation only; `allow_unvalidated_reference` enables Djokovic cues for demos. |
-| Speech | Partly | `espeak`/`say`/`print` backends work. **No WAV clips recorded yet. Board speaker untested.** `espeak-ng` must be installed on the board. |
+| Speech | Partly | Board default is `piper` (offline neural TTS; voice and aarch64 wheel bundled; 58 ms per sentence on the dev host). Falls back to `espeak-ng`, then text. **Board synthesis speed and speaker untested.** Playback needs `aplay` (alsa-utils). |
 | Qwen | Client ready | Request, validator and 1 s timeout fallback are tested. **No Qwen model tested yet; on-board model and size undecided.** |
 | Release evidence | Ready | `djoker-check` writes a JSON report: platform, providers, model hash, golden pose error and latency, decisions, camera FPS, audio, Qwen latency. |
 | Golden fixtures | Private | They contain a real player, so they are not in git. Create them with `scripts/make_golden.py` into `local/golden/` (git-ignored); the bundle builder copies them into `golden/`. Without them, the golden checks report WARN (skipped). |
@@ -48,7 +48,7 @@ flowchart LR
 | `compare2d.serve2d` | `detect_events`, `serve_metrics`, `estimate_yaw`: shared by the live path and the reference |
 | `coaching.board_feedback` | `FeedbackEngine(table, rules, serve_type, allow)(packet) -> Feedback`; `validate(feedback, reply)` |
 | `coaching.phraser` | `make_phraser(cfg).phrase(Feedback) -> {speech, source, latency_ms}` |
-| `live.audio` | `Speaker(backend, wav_dir).speak(text, code) -> AudioResult` (never raises) |
+| `live.audio` | `Speaker(backend, wav_dir, voice).speak(text, code) -> AudioResult` (never raises); `fetch_voice(name, cache)` verifies SHA-256 |
 | `live.session` | `Session(label, estimator, engine, phraser, speaker, out_dir)`: `.add(PoseFrame)`, `.trigger(ms)`, `.camera_fault()` |
 | `live.pipeline` / `live.runner` / `live.check` | `build(load_config(path))`; `djoker-run`; `djoker-check` |
 
@@ -60,14 +60,14 @@ On the dev host:
 .venv/bin/python scripts/build_bundle.py --target-python 3.12   # match the board's python3 --version (3.10-3.13)
 ```
 
-This writes `dist/djoker-board-0.1.0-py3.12-manylinux_2_28_aarch64.tar.gz` (~130 MB, fully offline). onnxruntime 1.31 wheels need glibc ≥ 2.28 (`ldd --version`). On Python 3.10, pip selects onnxruntime 1.23.2 (glibc ≥ 2.27).
+This writes `dist/djoker-board-0.1.0-py3.12-manylinux_2_28_aarch64.tar.gz` (~220 MB, fully offline; Piper adds ~34 MB of wheel and a 63 MB voice). onnxruntime 1.31 wheels need glibc ≥ 2.28 (`ldd --version`). On Python 3.10, pip selects onnxruntime 1.23.2 (glibc ≥ 2.27).
 
 On the board:
 
 ```sh
 tar xzf djoker-board-*.tar.gz && cd djoker-board-*/
 sha256sum -c MANIFEST.sha256 --quiet
-sudo apt install espeak-ng        # or record assets/audio/<CODE>.wav and set audio.backend = "wav"
+sudo apt install alsa-utils       # aplay for Piper speech; optional fallback: espeak-ng
 ./install.sh
 ./check.sh --camera webcam:/dev/video0 --speak    # keep runs/board_check_*.json as release evidence
 ./run.sh                                          # live; ./run.sh --source clip.mov for replay
