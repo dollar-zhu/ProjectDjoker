@@ -7,8 +7,8 @@ export type RegionScores = Record<keyof RegionCoverage,number|null>;
 export type PhaseScore = {phase:string;start:number;end:number;score:number|null};
 type Stage = {id:string;status:string;time:number|null;start:number|null;end:number|null};
 export type MotionInput = {frames:PoseFrame[];reference:number[][][];events:{id:string;time:number}[];duration:number;view:string;handedness:string;stages?:Stage[]};
-export type MotionSimilarity = {status:'unavailable';reason:string;alignment?:MotionAlignment;fit?:Fit;coverage?:number} | {status:'available';score:number;alignment:MotionAlignment;fit:Fit;meanDistance:number;coverage:number;quality:'full'|'partial';excludedMeasurements:string[];regionCoverage:RegionCoverage;regionScores:RegionScores;phaseScores:PhaseScore[];method:string};
-// COCO left/right correspondences are identical to the rear overlay. No yaw or mirror search.
+export type MotionSimilarity = {status:'unavailable';reason:string;alignment?:MotionAlignment;fit?:Fit;coverage?:number} | {status:'available';score:number;alignment:MotionAlignment;fit:Fit;meanDistance:number;coverage:number;quality:'full'|'partial'|'low';warnings:string[];excludedMeasurements:string[];regionCoverage:RegionCoverage;regionScores:RegionScores;phaseScores:PhaseScore[];method:string};
+// COCO left/right correspondences are identical to the rear overlay. Strict scores use no yaw or mirror search.
 const JOINTS=[[5,11],[6,14],[7,12],[8,15],[9,13],[10,16],[11,4],[12,1],[13,5],[14,2],[15,6],[16,3]];
 const REGIONS=[
  {id:'hittingArm',label:'Hitting arm',joints:[3,5],weight:.35},
@@ -121,11 +121,79 @@ function boundaries(input:MotionInput,load:number,reach:number,size:number):[num
  return [start!==null&&Number.isFinite(start)&&start>=frames[0].time&&start<load-.1?start:null,end!==null&&Number.isFinite(end)&&end<=Math.min(input.duration,frames.at(-1)!.time)&&reach<end-.1?end:null];
 }
 
-/** Experimental 2-D body-shape similarity, not serve quality or a calibrated percentage. */
-export function compareMotion(input:MotionInput):MotionSimilarity {
- const {frames,reference,events,duration,view,handedness}=input;
- if(view!=='rear'||handedness!=='right')return unavailable('Use a rear-view, right-handed serve for this reference set.');
- if(!Array.isArray(reference)||reference.length!==101||reference.some(p=>!Array.isArray(p)||p.length!==17||p.some(v=>!Array.isArray(v)||v.length!==3||!v.every(Number.isFinite))))return unavailable('The selected reference contains invalid pose data.');
+type Weighting={visible:(p:PoseFrame,j:number)=>boolean;weight:(p:PoseFrame,j:number)=>number;empty:number;note:string};
+const STRICT:Weighting={visible,weight:(p,j)=>Math.min(1,p.scores[j]),empty:Infinity,note:'uncertain samples excluded'};
+const hasXY=(p:PoseFrame,j:number)=>p.xy[j]?.length>=2&&p.xy[j].slice(0,2).every(Number.isFinite);
+// Lenient joints are never dropped, only down-weighted by tracking score, so a number always exists.
+const LENIENT:Weighting={visible:hasXY,weight:(p,j)=>Math.max(.01,Math.min(1,Number.isFinite(p.scores[j])?p.scores[j]:0)),empty:0,note:'low-confidence samples down-weighted'};
+const PHASES=[0,40,80,100];
+type Totals={alignment:MotionAlignment;totalError:number;totalWeight:number;regionTotals:{sum:number;weight:number}[];regionCoverage:RegionCoverage;phaseScores:PhaseScore[];excludedMeasurements:string[]};
+const totals=():Totals=>({alignment:[],totalError:0,totalWeight:0,regionTotals:REGIONS.map(()=>({sum:0,weight:0})),regionCoverage:{hittingArm:0,tossingArm:0,legs:0,torso:0},phaseScores:[],excludedMeasurements:[]});
+/** Anchored DTW of one phase onto reference phases, then region errors along the path; false when no path fits the band. */
+function scorePhase(sampled:PoseFrame[],segment:number,times:number[],reference:number[][][],refPose:(p:number[][])=>number[][],projected:number[][][],size:number,w:Weighting,acc:Totals):boolean {
+ const from=PHASES[segment],to=PHASES[segment+1],n=to-from+1,phaseWeight=(to-from)/100;
+ for(const[k,[j]]of JOINTS.entries()){
+  if(sampled.some(p=>!visible(p,j)))acc.excludedMeasurements.push(`${JOINT_NAMES[k]} partly hidden during ${PHASE_NAMES[segment]}; ${w.note}.`);
+ }
+ for(const region of REGIONS)acc.regionCoverage[region.id]+=phaseWeight*sampled.reduce((sum,p)=>sum+region.joints.filter(k=>visible(p,JOINTS[k][0])).length/region.joints.length,0)/n;
+ const user=sampled.map(p=>{const root=mid(p.xy[11],p.xy[12]);return JOINTS.map(([j])=>w.visible(p,j)?[(p.xy[j][0]-root[0])/size,(p.xy[j][1]-root[1])/size]:null);});
+ const regionDistance=(i:number,pose:number[][],keys:readonly number[])=>{
+  let sum=0,confidence=0;
+  for(const k of keys)if(user[i][k]){const weight=w.weight(sampled[i],JOINTS[k][0]);sum+=dist(user[i][k]!,pose[k])**2*weight;confidence+=weight;}
+  return confidence?{error:Math.sqrt(sum/confidence),confidence:confidence/keys.length}:null;
+ };
+ const poseDistance=(i:number,pose:number[][])=>{
+  let sum=0,weight=0;
+  for(const region of REGIONS){const d=regionDistance(i,pose,region.joints);if(d){sum+=d.error*region.weight;weight+=region.weight;}}
+  return weight?sum/weight:w.empty;
+ };
+ const distance=(i:number,j:number)=>poseDistance(i,projected[from+j]);
+ // Anchored DTW: a 20% band per phase, at most 2:1 local stretch; neither end can be skipped.
+ const cost=Array.from({length:n},()=>Array(n).fill(Infinity)),prev=Array.from({length:n},()=>Array<[number,number]|null>(n).fill(null));
+ cost[0][0]=distance(0,0);
+ for(let i=1;i<n;i++)for(let j=1;j<n;j++){
+  if(Math.abs(i-j)>Math.ceil((n-1)*.2))continue;
+  for(const [di,dj]of [[1,1],[1,2],[2,1]]){
+   if(i<di||j<dj)continue;
+   const skipped=di===2?distance(i-1,j):dj===2?distance(i,j-1):0;
+   const c=cost[i-di][j-dj]+distance(i,j)+skipped+.002*(di+dj-2);
+   if(c<cost[i][j]){cost[i][j]=c;prev[i][j]=[i-di,j-dj];}
+  }
+ }
+ if(!Number.isFinite(cost[n-1][n-1]))return false;
+ const path:[number,number][]=[];let point:[number,number]|null=[n-1,n-1];
+ while(point){path.push(point);point=prev[point[0]][point[1]];}path.reverse();
+ const map=Array<number>(n);for(const[i,j]of path)map[i]=j;
+ for(let i=1;i<n-1;i++)if(map[i]===undefined)map[i]=(map[i-1]+map[i+1])/2;
+ const regionErrors=REGIONS.map(()=>({sum:0,confidence:0}));
+ for(let i=0;i<n;i++){
+  const phase=from+map[i];if(acc.alignment.length===0||i>0)acc.alignment.push({time:sampled[i].time,referencePhase:phase});
+  const pose=refPose(referencePoseAt(reference,phase)!);
+  for(const[r,region]of REGIONS.entries()){
+   const d=regionDistance(i,pose,region.joints);
+   if(d){regionErrors[r].sum+=d.error*d.confidence;regionErrors[r].confidence+=d.confidence;}
+  }
+ }
+ let phaseError=0,phaseRegionWeight=0;
+ for(const[r,region]of REGIONS.entries()){
+  const d=regionErrors[r];
+  if(d.confidence){const e=d.sum/d.confidence;acc.totalError+=phaseWeight*region.weight*e;acc.totalWeight+=phaseWeight*region.weight;acc.regionTotals[r].sum+=phaseWeight*e;acc.regionTotals[r].weight+=phaseWeight;phaseError+=region.weight*e;phaseRegionWeight+=region.weight;}
+ }
+ acc.phaseScores.push({phase:PHASE_NAMES[segment],start:times[segment],end:times[segment+1],score:phaseRegionWeight?displayScore(phaseError/phaseRegionWeight):null});
+ return true;
+}
+function finish(acc:Totals,fit:Fit,quality:'full'|'partial'|'low',warnings:string[],method:string):MotionSimilarity {
+ for(const r of REGIONS)acc.regionCoverage[r.id]=Math.max(0,Math.min(1,acc.regionCoverage[r.id]));
+ const coverage=Math.max(0,Math.min(1,REGIONS.reduce((sum,r)=>sum+r.weight*acc.regionCoverage[r.id],0)));
+ const meanDistance=acc.totalError/acc.totalWeight;
+ const regionScores=Object.fromEntries(REGIONS.map((r,i)=>[r.id,acc.regionTotals[i].weight?displayScore(acc.regionTotals[i].sum/acc.regionTotals[i].weight):null])) as RegionScores;
+ return {status:'available',score:displayScore(meanDistance),alignment:acc.alignment,fit,meanDistance,coverage,quality,warnings,excludedMeasurements:acc.excludedMeasurements,regionCoverage:acc.regionCoverage,regionScores,phaseScores:acc.phaseScores,method};
+}
+const validReference=(reference:number[][][])=>Array.isArray(reference)&&reference.length===101&&reference.every(p=>Array.isArray(p)&&p.length===17&&p.every(v=>Array.isArray(v)&&v.length===3&&v.every(Number.isFinite)));
+
+/** Rear-view, right-handed comparison with every tracking gate; the reason explains a withheld strict score. */
+function strictMotion(input:MotionInput):MotionSimilarity {
+ const {frames,reference,events,duration}=input;
  if(!Number.isFinite(duration)||duration<=0||frames.length<10||frames.some((p,i)=>!Number.isFinite(p.time)||(i>0&&p.time<=frames[i-1].time)||p.xy.length!==17||p.scores.length!==17||p.xy.some(q=>!Array.isArray(q)||q.length<2)))return unavailable('Recording timestamps or pose data are invalid.');
  const load=events.find(e=>e.id==='loading')?.time,reach=events.find(e=>e.id==='reach')?.time;
  if(load===undefined||reach===undefined||![load,reach].every(Number.isFinite)||!(0<load&&load<reach&&reach<duration))return unavailable('Reliable loading and overhead-reach moments are needed to align the motion.');
@@ -135,88 +203,100 @@ export function compareMotion(input:MotionInput):MotionSimilarity {
  const size=torso(loadFrame);
  if((mid(reachFrame.xy[5],reachFrame.xy[6])[1]-reachFrame.xy[10][1])/size<.25)return unavailable('A clear overhead reach is needed for a complete serve comparison.');
  const [start,end]=boundaries(input,load,reach,size);
- let reason=start===null&&end===null?'The setup and follow-through could not be identified reliably in this recording.'
-  :start===null?'The setup before loading could not be identified reliably in this recording.'
-  :end===null?'The follow-through / finish could not be identified reliably in this recording.':'';
- const inWindow=frames.filter(p=>p.time>=(start??load)&&p.time<=(end??reach));
+ if(start===null||end===null)return unavailable(start===null&&end===null?'The setup and follow-through could not be identified reliably in this recording.'
+  :start===null?'The setup before loading could not be identified reliably in this recording.':'The follow-through / finish could not be identified reliably in this recording.');
+ const inWindow=frames.filter(p=>p.time>=start&&p.time<=end);
  if(inWindow.some((p,i)=>i>0&&p.time-inWindow[i-1].time>MAX_GAP))return unavailable('Tracking has a long gap within the serve.');
- const counts=JOINTS.map(([j])=>inWindow.filter(p=>visible(p,j)).length/inWindow.length);
- let coverage=counts.reduce((a,b)=>a+b,0)/counts.length;
- const normalizeReference=(p:number[][])=>{const q=projectPose(p,0),root=mid(q[4],q[1]);return JOINTS.map(([,j])=>[(q[j][0]-root[0])*fit.scale/size,(q[j][1]-root[1])*fit.scale/size]);};
- const projected=reference.map(normalizeReference);
- const normalized=(p:PoseFrame)=>{const root=mid(p.xy[11],p.xy[12]);return JOINTS.map(([j])=>visible(p,j)?[(p.xy[j][0]-root[0])/size,(p.xy[j][1]-root[1])/size]:null);};
- const alignment:MotionAlignment=[];let totalError=0,totalWeight=0;
- const excludedMeasurements:string[]=[];
- const regionCoverage:RegionCoverage={hittingArm:0,tossingArm:0,legs:0,torso:0};
- const regionTotals=REGIONS.map(()=>({sum:0,weight:0})),phaseScores:PhaseScore[]=[];
- const times=[start??load,load,reach,end??reach],phases=[0,40,80,100];
+ const refPose=(p:number[][])=>{const q=projectPose(p,0),root=mid(q[4],q[1]);return JOINTS.map(([,j])=>[(q[j][0]-root[0])*fit.scale/size,(q[j][1]-root[1])*fit.scale/size]);};
+ const projected=reference.map(refPose),times=[start,load,reach,end],acc=totals();
  for(let segment=0;segment<3;segment++){
-  if((segment===0&&start===null)||(segment===2&&end===null))continue;
-  const from=phases[segment],to=phases[segment+1],n=to-from+1;
+  const n=PHASES[segment+1]-PHASES[segment]+1;
   const sampled=Array.from({length:n},(_,i)=>interpolate(frames,times[segment]+(times[segment+1]-times[segment])*i/(n-1)));
-  if(!phaseTracked(sampled)){reason||='A movement phase has insufficient joint tracking to align it reliably.';break;}
-  const phaseWeight=(to-from)/100;
-  for(const[k,[j]]of JOINTS.entries()){
-   if(sampled.some(p=>!visible(p!,j)))excludedMeasurements.push(`${JOINT_NAMES[k]} partly hidden during ${PHASE_NAMES[segment]}; uncertain samples excluded.`);
-  }
+  if(!phaseTracked(sampled))return unavailable('A movement phase has insufficient joint tracking to align it reliably.');
   for(const region of REGIONS){
-   const observed=sampled.filter(p=>region.joints.some(k=>visible(p!,JOINTS[k][0]))).length/n;
    // At least half of each dynamic region must be observed within the phase.
    // A missing wrist is tolerable; a missing entire hitting arm is not replaced with torso similarity.
-   if(observed<.5)reason||=`${region.label} is not observed enough during ${PHASE_NAMES[segment]} to compare the motion.`;
-   regionCoverage[region.id]+=phaseWeight*sampled.reduce((sum,p)=>sum+region.joints.filter(k=>visible(p!,JOINTS[k][0])).length/region.joints.length,0)/n;
+   if(sampled.filter(p=>region.joints.some(k=>visible(p!,JOINTS[k][0]))).length/n<.5)return unavailable(`${region.label} is not observed enough during ${PHASE_NAMES[segment]} to compare the motion.`);
   }
-  const user=sampled.map(p=>normalized(p!));
-  const regionDistance=(i:number,pose:number[][],keys:readonly number[])=>{
-   let sum=0,confidence=0;
-   for(const k of keys)if(user[i][k]){const weight=Math.min(1,sampled[i]!.scores[JOINTS[k][0]]);sum+=dist(user[i][k]!,pose[k])**2*weight;confidence+=weight;}
-   return confidence?{error:Math.sqrt(sum/confidence),confidence:confidence/keys.length}:null;
-  };
-  const poseDistance=(i:number,pose:number[][])=>{
-   let sum=0,weight=0;
-   for(const region of REGIONS){const d=regionDistance(i,pose,region.joints);if(d){sum+=d.error*region.weight;weight+=region.weight;}}
-   return weight?sum/weight:Infinity;
-  };
-  const distance=(i:number,j:number)=>poseDistance(i,projected[from+j]);
-  // Anchored DTW: a 20% band per phase, at most 2:1 local stretch; neither end can be skipped.
-  const cost=Array.from({length:n},()=>Array(n).fill(Infinity)),prev=Array.from({length:n},()=>Array<[number,number]|null>(n).fill(null));
-  cost[0][0]=distance(0,0);
-  for(let i=1;i<n;i++)for(let j=1;j<n;j++){
-   if(Math.abs(i-j)>Math.ceil((n-1)*.2))continue;
-   for(const [di,dj]of [[1,1],[1,2],[2,1]]){
-    if(i<di||j<dj)continue;
-    const skipped=di===2?distance(i-1,j):dj===2?distance(i,j-1):0;
-    const c=cost[i-di][j-dj]+distance(i,j)+skipped+.002*(di+dj-2);
-    if(c<cost[i][j]){cost[i][j]=c;prev[i][j]=[i-di,j-dj];}
-   }
-  }
-  if(!Number.isFinite(cost[n-1][n-1]))return unavailable('The phases could not be aligned within the allowed timing difference.');
-  const path:[number,number][]=[];let point:[number,number]|null=[n-1,n-1];
-  while(point){path.push(point);point=prev[point[0]][point[1]];}path.reverse();
-  const map=Array<number>(n);for(const[i,j]of path)map[i]=j;
-  for(let i=1;i<n-1;i++)if(map[i]===undefined)map[i]=(map[i-1]+map[i+1])/2;
-  const regionErrors=REGIONS.map(()=>({sum:0,confidence:0}));
-  for(let i=0;i<n;i++){
-   const phase=from+map[i];if(alignment.length===0||i>0)alignment.push({time:sampled[i]!.time,referencePhase:phase});
-   const pose=normalizeReference(referencePoseAt(reference,phase)!);
-   for(const[r,region]of REGIONS.entries()){
-    const d=regionDistance(i,pose,region.joints);
-    if(d){regionErrors[r].sum+=d.error*d.confidence;regionErrors[r].confidence+=d.confidence;}
-   }
-  }
-  let phaseError=0,phaseRegionWeight=0;
-  for(const[r,region]of REGIONS.entries()){
-   const d=regionErrors[r];
-   if(d.confidence){const e=d.sum/d.confidence;totalError+=phaseWeight*region.weight*e;totalWeight+=phaseWeight*region.weight;regionTotals[r].sum+=phaseWeight*e;regionTotals[r].weight+=phaseWeight;phaseError+=region.weight*e;phaseRegionWeight+=region.weight;}
-  }
-  phaseScores.push({phase:PHASE_NAMES[segment],start:times[segment],end:times[segment+1],score:phaseRegionWeight?displayScore(phaseError/phaseRegionWeight):null});
+  if(!scorePhase(sampled as PoseFrame[],segment,times,reference,refPose,projected,size,STRICT,acc))return unavailable('The phases could not be aligned within the allowed timing difference.');
  }
- for(const r of REGIONS)regionCoverage[r.id]=Math.max(0,Math.min(1,regionCoverage[r.id]));
- coverage=Math.max(0,Math.min(1,REGIONS.reduce((sum,r)=>sum+r.weight*regionCoverage[r.id],0)));
- if(reason)return {status:'unavailable',reason,...(alignment.length?{alignment,fit,coverage}:{})};
- const meanDistance=totalError/totalWeight;
- const regionScores=Object.fromEntries(REGIONS.map((r,i)=>[r.id,regionTotals[i].weight?displayScore(regionTotals[i].sum/regionTotals[i].weight):null])) as RegionScores;
- return {status:'available',score:displayScore(meanDistance),alignment,fit,meanDistance,coverage,quality:excludedMeasurements.length?'partial':'full',excludedMeasurements,regionCoverage,regionScores,phaseScores,method:'experimental-rear-pose-dtw-v2'};
+ return finish(acc,fit,acc.excludedMeasurements.length?'partial':'full',[],'experimental-rear-pose-dtw-v2');
+}
+
+const SWAP=[0,2,1,4,3,6,5,8,7,10,9,12,11,14,13,16,15];
+type Orientation={yaw:number;mirror:boolean;swap:boolean};
+/** Rear reference seen from the given camera view; a left-hander is a mirrored, relabelled right-hander. */
+function orientations(view:string,handedness:string):Orientation[] {
+ const views:[number,boolean][]=view==='rear'?[[0,false]]:view==='front'?[[0,true]]:view==='side'?[[90,false],[-90,false]]:[[0,false],[0,true],[90,false],[-90,false]];
+ const hands=handedness==='left'?[true]:handedness==='right'?[false]:[false,true];
+ return hands.flatMap(swap=>views.map(([yaw,mirror])=>({yaw,mirror:mirror!==swap,swap})));
+}
+const orient=(p:PoseFrame,o:Orientation):PoseFrame=>{
+ const xy=o.swap?SWAP.map(j=>p.xy[j]):p.xy,scores=o.swap?SWAP.map(j=>p.scores[j]):p.scores;
+ return {time:p.time,xy:o.mirror?xy.map(q=>[-q[0],q[1]]):xy,scores};
+};
+/** Bracketing frames regardless of gap length; lenient mode never leaves a sample empty. */
+function interpolateAny(frames:PoseFrame[],time:number):PoseFrame {
+ const i=frames.findIndex(p=>p.time>=time-1e-8);if(i<=0)return i<0?frames.at(-1)!:frames[0];
+ const a=frames[i-1],b=frames[i],q=(time-a.time)/(b.time-a.time);
+ return {time,xy:a.xy.map((p,j)=>p.map((v,k)=>v+(b.xy[j][k]-v)*q)),scores:a.scores.map((s,j)=>Math.min(s,b.scores[j]))};
+}
+/** Highest hitting wrist (after the opening frames), then the lowest hips within 1.5 s before it. */
+function estimateAnchors(frames:PoseFrame[],size:number):[number,number] {
+ const t0=frames[0].time,tN=frames.at(-1)!.time,height=(p:PoseFrame)=>(mid(p.xy[5],p.xy[6])[1]-p.xy[10][1])/size;
+ let candidates=frames.filter(p=>p.time>=t0+Math.min(.2,(tN-t0)/4));
+ for(const min of [.3,.1]){const c=candidates.filter(p=>p.scores[10]>=min);if(c.length){candidates=c;break;}}
+ const reach=candidates.reduce((a,b)=>height(b)>height(a)?b:a).time;
+ const before=frames.filter(p=>p.time<reach-.1&&p.time>=reach-1.5),window=before.length?before:frames.filter(p=>p.time<reach);
+ if(!window.length)return [t0,tN];
+ return [window.reduce((a,b)=>mid(b.xy[11],b.xy[12])[1]>mid(a.xy[11],a.xy[12])[1]?b:a).time,reach];
+}
+function weightedMedian(values:{v:number;w:number}[]):number {
+ const sorted=[...values].sort((a,b)=>a.v-b.v),half=sorted.reduce((s,x)=>s+x.w,0)/2;let sum=0;
+ for(const x of sorted){sum+=x.w;if(sum>=half)return x.v;}return sorted.at(-1)!.v;
+}
+function lenientFor(input:MotionInput,frames:PoseFrame[],o:Orientation):(MotionSimilarity&{status:'available'})|null {
+ const f=frames.map(p=>orient(p,o)),t0=f[0].time,tN=f.at(-1)!.time,warnings:string[]=[];
+ const sizes=f.map(p=>({v:torso(p),w:Math.min(...[5,6,11,12].map(j=>LENIENT.weight(p,j)))})).filter(x=>Number.isFinite(x.v)&&x.v>1e-6);
+ if(!sizes.length)return null;
+ const size=weightedMedian(sizes);
+ let load=input.events.find(e=>e.id==='loading')?.time,reach=input.events.find(e=>e.id==='reach')?.time;
+ if(load===undefined||reach===undefined||!(t0<=load&&load<reach&&reach<=tN)){
+  [load,reach]=estimateAnchors(f,size);warnings.push('Loading and reach were estimated from the highest hitting wrist and lowest hip position.');
+ }
+ const stage=(id:string)=>input.stages?.find(s=>s.id===id&&s.status==='estimated');
+ const setup=stage('setup')?.time,finishEnd=stage('finish')?.end;
+ const start=setup!=null&&setup>=t0&&setup<load-.1?setup:Math.max(t0,load-1.2),end=finishEnd!=null&&finishEnd<=tN&&finishEnd>reach+.1?finishEnd:Math.min(tN,reach+.6);
+ const q=projectPose(input.reference[40],o.yaw),refTorso=dist(mid(q[11],q[14]),mid(q[4],q[1]));
+ if(!(refTorso>.05))return null;
+ const fit:Fit={yaw:o.yaw,mirror:o.mirror,scale:size/refTorso,error:0};
+ const refPose=(p:number[][])=>{const r=projectPose(p,o.yaw),root=mid(r[4],r[1]);return JOINTS.map(([,j])=>[(r[j][0]-root[0])*fit.scale/size,(r[j][1]-root[1])*fit.scale/size]);};
+ const projected=input.reference.map(refPose),times=[start,load,reach,end],acc=totals();
+ for(let segment=0;segment<3;segment++){
+  if(times[segment+1]-times[segment]<.1){warnings.push(segment===0?'The setup before loading was not recorded; it is not scored.':'The follow-through was not recorded; it is not scored.');continue;}
+  const n=PHASES[segment+1]-PHASES[segment]+1;
+  const sampled=Array.from({length:n},(_,i)=>interpolateAny(f,times[segment]+(times[segment+1]-times[segment])*i/(n-1)));
+  scorePhase(sampled,segment,times,input.reference,refPose,projected,size,LENIENT,acc);
+ }
+ if(!acc.totalWeight)return null;
+ return finish(acc,fit,'low',warnings,'experimental-pose-dtw-lenient-v1') as MotionSimilarity&{status:'available'};
+}
+
+/** Experimental 2-D body-shape similarity, not serve quality or a calibrated percentage.
+ * The strict rear-view score is used when every tracking gate passes; otherwise a confidence-weighted
+ * lenient score is returned with quality 'low' and the reasons, so any tracked recording gets a number. */
+export function compareMotion(input:MotionInput):MotionSimilarity {
+ if(!validReference(input.reference))return unavailable('The selected reference contains invalid pose data.');
+ const strict=input.view==='rear'&&input.handedness==='right'?strictMotion(input):null;
+ if(strict?.status==='available')return strict;
+ const frames=(Array.isArray(input.frames)?input.frames:[]).filter(p=>Number.isFinite(p?.time)&&p.xy?.length===17&&p.scores?.length===17&&p.xy.every(q=>Array.isArray(q)&&q.length>=2))
+  .filter((p,i,all)=>i===0||p.time>all[i-1].time);
+ if(frames.length<2)return unavailable('No tracked body poses were recorded.');
+ let best:(MotionSimilarity&{status:'available'})|null=null;
+ for(const o of orientations(input.view,input.handedness)){const r=lenientFor(input,frames,o);if(r&&(!best||r.meanDistance<best.meanDistance))best=r;}
+ if(!best)return unavailable('No tracked body poses were recorded.');
+ best.warnings.unshift(strict?.status==='unavailable'?strict.reason:'The reference set is filmed from behind a right-handed server; this recording was re-oriented to match it.');
+ return best;
 }
 
 /** Shared fractional pose sampler for the rendered overlay and its score. */

@@ -76,8 +76,20 @@ class ReviewTests(unittest.TestCase):
     def test_front_view_and_unknown_handedness_do_not_get_right_handed_rules(self):
         for opts in [{'view':'front'},{'handedness':'unknown'},{'handedness':'left'}]:
             r=self.call(**opts)
-            self.assertEqual(r['events'],[])
             self.assertEqual(r['feedback']['mode'],'retry')
+            self.assertNotIn('stages',r)
+            self.assertTrue(all('coaching feedback was withheld' in e['detail'] for e in r['events']))
+
+    def test_coaching_retry_still_returns_comparison_anchors(self):
+        # Rear view hides the left shoulder often: coaching abstains, the similarity score still needs anchors.
+        scores=np.full((91,17),.9);scores[::2,5]=.35
+        r=self.call(scores=scores)
+        self.assertEqual(r['feedback']['mode'],'retry')
+        self.assertNotIn('stages',r)
+        self.assertEqual([e['id'] for e in r['events']],['loading','reach'])
+        self.assertTrue(all('coaching feedback was withheld' in e['detail'] for e in r['events']))
+        self.assertAlmostEqual(r['events'][0]['time'],1.1,delta=.1)
+        self.assertAlmostEqual(r['events'][1]['time'],2,delta=.1)
 
     def test_invalid_timestamps_fail_explicitly(self):
         with self.assertRaises(ValueError): self.call(times=np.zeros(91))

@@ -5,12 +5,12 @@ import {alignedReference,loadingEvidence,type ReferenceOverlay} from '@/lib/over
 import {frameAt,type Stage} from '@/lib/playback';
 type PoseFrame={time:number;xy:number[][];scores:number[]};
 type Reference={player:string;total:number;sourceTotal:number;excluded:number;selected:string;poses:number[][][];serves:{id:string;opponent:string;serveNumber:number;flags:string[]}[];source:string;license:string};
-type ScoreSummary={status:string;score?:number;coverage?:number;reason?:string;quality?:'full'|'partial';excludedMeasurements?:string[];regionCoverage?:{hittingArm:number;tossingArm:number;legs:number;torso:number}};
+type ScoreSummary={status:string;score?:number;coverage?:number;reason?:string;quality?:'full'|'partial'|'low';warnings?:string[];excludedMeasurements?:string[];regionCoverage?:{hittingArm:number;tossingArm:number;legs:number;torso:number}};
 export function SimilaritySummary({player,comparison}:{player:string;comparison:ScoreSummary}){
  return <div className="motion-score" aria-live="polite">
   <span className="eyebrow">EXPERIMENTAL BODY SIMILARITY</span>
   {comparison.status==='available'?<><div className="score-value"><strong>{comparison.score}</strong><span>/ 100</span></div><p>Compared with the selected {player} serve. More similar tracked body positions give a higher score.</p>
-   {comparison.coverage!==undefined&&<div className="tracking-coverage"><span className="pill">{Math.round(comparison.coverage*100)}% joint coverage</span>{comparison.quality==='partial'&&<p>Some joints were obscured. The score uses the visible movement; hidden positions are excluded.</p>}</div>}
+   {comparison.coverage!==undefined&&<div className="tracking-coverage"><span className="pill">{Math.round(comparison.coverage*100)}% joint coverage</span>{comparison.quality==='partial'&&<p>Some joints were obscured. The score uses the visible movement; hidden positions are excluded.</p>}{comparison.quality==='low'&&<p>Low-confidence estimate: uncertain joints are down-weighted rather than excluded. {comparison.warnings?.join(' ')}</p>}</div>}
    {comparison.regionCoverage&&<details className="score-evidence"><summary>What was compared</summary><dl>{([['hittingArm','Hitting arm'],['tossingArm','Tossing arm'],['legs','Legs'],['torso','Torso']] as const).map(([key,label])=><div key={key}><dt>{label}</dt><dd>{Math.round(comparison.regionCoverage![key]*100)}% tracked</dd></div>)}</dl>{comparison.excludedMeasurements?.map(note=><p key={note}>{note}</p>)}</details>}
    <p>Movement phases are aligned to allow different speeds. This is similarity, not technique quality or a calibrated percentage.</p></>:<><h3>Score unavailable</h3><p>{comparison.reason}</p><p>There is not enough visible movement to make a useful comparison.</p></>}
  </div>;
@@ -31,7 +31,7 @@ export function ReferenceReview({view,handedness,duration,events,frames,stages,o
  const load=events.find(e=>e.id==='loading')?.time;
  const loadFrame=load===undefined?null:frameAt(frames,load);
  const fit=comparison?.fit;
- const aligned=useMemo<ReferenceOverlay|null>(()=>data&&comparison?.alignment?.length&&fit?{poses:data.poses,fit,player:data.player,alignment:comparison.alignment,partial:comparison.status!=='available'}:null,[data,comparison,fit]);
+ const aligned=useMemo<ReferenceOverlay|null>(()=>data&&comparison?.alignment?.length&&fit?{poses:data.poses,fit,player:data.player,alignment:comparison.alignment,partial:comparison.status!=='available'||comparison.quality==='low'}:null,[data,comparison,fit]);
  useEffect(()=>{commentVersion.current++;setComment(null);setCommentError('');return()=>{commentVersion.current++;};},[data,fit]);
  const evidence=useMemo(()=>{
   if(!data||!fit||!loadFrame||load===undefined)return null;

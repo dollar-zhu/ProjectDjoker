@@ -1,6 +1,7 @@
 """Presentation adapter for the repository's strict coaching engine; no new fault rules."""
 from pathlib import Path
 import sys
+import warnings
 import numpy as np
 
 ROOT=Path(__file__).resolve().parents[2]
@@ -18,7 +19,45 @@ def retry(reason):
             'uncertainty':'No technique judgement was made.'}}
 
 
+SWAP=[0,2,1,4,3,6,5,8,7,10,9,12,11,14,13,16,15]
+COMPARISON_DETAIL=' Used for the reference comparison only; coaching feedback was withheld for this recording.'
+
+
+def event_list(times,load,reach,offset=0,confidence='strict',comparison_only=False):
+    note=COMPARISON_DETAIL if comparison_only else ''
+    return [{'id':'loading','label':'Loading','time':float(times[load]),'frame':int(load)+offset,'confidence':confidence,
+             'detail':'Estimated deepest knee bend before upward reach. Review the frame; this is not a validated trophy-position label.'+note},
+            {'id':'reach','label':'Upward reach','time':float(times[reach]),'frame':int(reach)+offset,'confidence':confidence,
+             'detail':'Highest tracked hitting wrist. This does not establish ball contact.'+note}]
+
+
+def comparison_events(times,pose,scores,handedness,image_size):
+    """Loading/reach anchors for the similarity score when the coaching gates abstain.
+
+    Coaching keeps its stricter gates; these anchors never create stages or feedback."""
+    w,h=image_size
+    inside=np.isfinite(pose).all(2)&np.isfinite(scores)&(pose[:,:,0]>=0)&(pose[:,:,0]<w)&(pose[:,:,1]>=0)&(pose[:,:,1]<h)
+    # serve_metrics assumes a right-handed hitting wrist; relabel a left-hander's joints.
+    if handedness=='left': pose,scores,inside=pose[:,SWAP],scores[:,SWAP],inside[:,SWAP]
+    flagged=None
+    for threshold,confidence in ((.5,'strict'),(.3,'relaxed')):
+        masked=pose.copy();masked[~(inside&(scores>=threshold))]=np.nan
+        with warnings.catch_warnings():
+            warnings.simplefilter('ignore',RuntimeWarning);metrics=serve_metrics(times,masked)
+        if metrics is None or not metrics['load_frame']<metrics['reach_frame']: continue
+        if not metrics['flags']: return event_list(times,metrics['load_frame'],metrics['reach_frame'],confidence=confidence,comparison_only=True)
+        flagged=flagged or metrics
+    return event_list(times,flagged['load_frame'],flagged['reach_frame'],confidence='low',comparison_only=True) if flagged else []
+
+
 def review(directory,times,pose,scores,view,handedness,image_size,crop_mode='fixed_operator',runtime='ExecuTorch QNN on Ventuno'):
+    result=coaching_review(directory,times,pose,scores,view,handedness,image_size,crop_mode,runtime)
+    if not result['events']:
+        result['events']=comparison_events(np.asarray(times,float),np.asarray(pose,float),np.asarray(scores,float),handedness,image_size)
+    return result
+
+
+def coaching_review(directory,times,pose,scores,view,handedness,image_size,crop_mode,runtime):
     times=np.asarray(times,float);pose=np.asarray(pose,float);scores=np.asarray(scores,float)
     if len(times)<2 or not np.isfinite(times).all() or not (np.diff(times)>0).all():
         raise ValueError('Timestamps must increase strictly.')
@@ -66,8 +105,5 @@ def review(directory,times,pose,scores,view,handedness,image_size,crop_mode='fix
     vals=fb['metrics']
     fb['observation']=f"At the estimated loading moment, your left knee angle is {vals['front_knee_at_load']:.0f}° and right knee angle {vals['back_knee_at_load']:.0f}° in this view."
     fb['canonical_text']=fb['observation']
-    events=[{'id':'loading','label':'Loading','time':float(times[load]),'frame':int(load)+offset,
-             'detail':'Estimated deepest knee bend before upward reach. Review the frame; this is not a validated trophy-position label.'},
-            {'id':'reach','label':'Upward reach','time':float(times[reach]),'frame':int(reach)+offset,
-             'detail':'Highest tracked hitting wrist. This does not establish ball contact.'}]
+    events=event_list(times,load,reach,offset)
     return {'events':events,'stages':movement_stages(times,masked,load,reach,offset),'feedback':fb,'analysis_window':{'start':float(times[0]),'end':float(times[-1]),'start_frame':offset}}

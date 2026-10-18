@@ -30,3 +30,9 @@ test('an occluded wrist preserves the score and explains measurement coverage',a
  assert.match(html,/Hitting arm/);
  assert.doesNotMatch(html,/Score unavailable/);
 });
+
+test('a low-confidence fallback score shows its number and the reason',async()=>{
+ const {SimilaritySummary}=await import('../components/reference-review');
+ const html=renderToStaticMarkup(createElement(SimilaritySummary,{player:'Novak Djokovic',comparison:{status:'available',score:41,coverage:.4,quality:'low',warnings:['A clear overhead reach is needed for a complete serve comparison.']}}));
+ assert.match(html,/>41</);assert.match(html,/Low-confidence estimate/);assert.match(html,/clear overhead reach/);
+});

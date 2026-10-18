@@ -22,6 +22,7 @@ function fixture(warp=false){
  });
  return {frames,reference,events:[{id:'loading',time:2},{id:'reach',time:4}],duration:5,view:'rear',handedness:'right',stages:[{id:'setup',status:'estimated',time:0,start:0,end:0},{id:'finish',status:'estimated',time:5,start:4.9,end:5}]};
 }
+const low=(r:ReturnType<typeof compareMotion>,pattern?:RegExp)=>{assert.equal(r.status,'available');if(r.status!=='available')return null;assert.equal(r.quality,'low');assert.ok(Number.isFinite(r.score));if(pattern)assert.ok(r.warnings.some(w=>pattern.test(w)),r.warnings.join(' | '));return r;};
 test('identical projected motion scores 100 and supplies exact phase anchors',()=>{
  const r=compareMotion(fixture());assert.equal(r.status,'available');if(r.status!=='available')return;
  assert.equal(r.score,100);assert.equal(r.quality,'full');assert.ok(r.coverage<=1&&r.coverage>=0);assert.ok(Object.values(r.regionCoverage).every(v=>v<=1&&v>=0));assert.equal(referencePhaseAt(r.alignment,2),40);assert.equal(referencePhaseAt(r.alignment,4),80);
@@ -42,32 +43,43 @@ test('meaningful limb deviations reduce score rather than being warped away',()=
  const r=compareMotion(f);assert.equal(r.status,'available');if(r.status!=='available')return;assert.ok(r.score<85);
  const regions=r.regionScores as Record<string,number>;assert.equal(Object.entries(regions).sort((a,b)=>a[1]-b[1])[0][0],'hittingArm');assert.equal(regions.legs,100);
 });
-test('missing whole phase and incomplete tail are not full-motion scores',()=>{
- const f=fixture();f.frames=f.frames.filter(p=>p.time<2.3||p.time>3.6);assert.equal(compareMotion(f).status,'unavailable');
+test('missing whole phase and incomplete tail get a low-confidence score with the reason',()=>{
+ const f=fixture();f.frames=f.frames.filter(p=>p.time<2.3||p.time>3.6);low(compareMotion(f),/gap|insufficient|align/i);
  const tail=fixture();tail.frames=tail.frames.filter(p=>p.time<4.3);tail.duration=4.3;tail.stages=[];
- const r=compareMotion(tail);assert.equal(r.status,'unavailable');if(r.status==='unavailable')assert.match(r.reason,/follow-through|complete|finish/i);
+ low(compareMotion(tail),/follow-through|complete|finish/i);
 });
-test('an unobserved hitting arm, incompatible views and corrupt references withhold a number',()=>{
- const f=fixture();for(const p of f.frames){p.scores[8]=.1;p.scores[10]=.1;}assert.equal(compareMotion(f).status,'unavailable');
- assert.equal(compareMotion({...fixture(),view:'side'}).status,'unavailable');assert.equal(compareMotion({...fixture(),handedness:'left'}).status,'unavailable');
+test('an unobserved hitting arm and other views are scored at low confidence; corrupt references or no poses still withhold',()=>{
+ const f=fixture();for(const p of f.frames){p.scores[8]=.1;p.scores[10]=.1;}low(compareMotion(f),/hitting|arm/i);
+ low(compareMotion({...fixture(),view:'side'}),/re-oriented/);low(compareMotion({...fixture(),handedness:'left'}),/re-oriented/);
  assert.equal(compareMotion({...fixture(),reference:[]}).status,'unavailable');
  const bad=fixture();bad.reference=structuredClone(reference);bad.reference[10][5][0]=NaN;assert.equal(compareMotion(bad).status,'unavailable');
+ assert.equal(compareMotion({...fixture(),frames:[]}).status,'unavailable');
 });
-test('invalid timestamps and phase events do not create a plausible score',()=>{
- const f=fixture();f.frames[10].time=f.frames[9].time;assert.equal(compareMotion(f).status,'unavailable');assert.equal(compareMotion({...fixture(),events:[]}).status,'unavailable');
+test('duplicate timestamps and missing phase events still produce a labelled estimate',()=>{
+ const f=fixture();f.frames[10].time=f.frames[9].time;low(compareMotion(f),/timestamps/i);
+ const r=low(compareMotion({...fixture(),events:[]}),/estimated from the highest hitting wrist/);
+ assert.ok(r&&r.score>=90,`score ${r?.score}`);
 });
-test('incomplete follow-through still offers an explicitly partial setup-to-reach replay',()=>{
+test('incomplete follow-through scores the observed setup-to-reach only',()=>{
  const f=fixture();f.stages=f.stages.filter(s=>s.id==='setup');f.frames=f.frames.filter(p=>p.time<=4.2);f.duration=4.2;
- const r=compareMotion(f);assert.equal(r.status,'unavailable');if(r.status!=='unavailable')return;
- assert.ok(r.alignment?.length);assert.ok(r.fit);assert.equal(referencePhaseAt(r.alignment!,4),80);assert.equal(referencePhaseAt(r.alignment!,4.1),null);
+ const r=low(compareMotion(f),/follow-through|finish/i);if(!r)return;
+ assert.equal(referencePhaseAt(r.alignment,4),80);assert.ok(r.alignment.at(-1)!.time<=4.2);
+});
+test('a mirrored left-handed serve matches its right-handed reference through the mirrored overlay',()=>{
+ const f=fixture(),swap=[0,2,1,4,3,6,5,8,7,10,9,12,11,14,13,16,15];
+ f.frames=f.frames.map(p=>({...p,xy:swap.map(j=>[1000-p.xy[j][0],p.xy[j][1]])}));
+ const r=compareMotion({...f,handedness:'left'});assert.equal(r.status,'available');if(r.status!=='available')return;
+ assert.equal(r.quality,'low');assert.ok(r.score>=99,`score ${r.score}`);assert.equal(r.fit.mirror,true);
+ const ghost=alignedReference(referencePoseAt(reference,r.alignment[0].referencePhase)!,f.frames[0],r.fit)!;
+ for(const[c,h]of joints)assert.ok(Math.hypot(ghost[h][0]-f.frames[0].xy[swap[c]][0],ghost[h][1]-f.frames[0].xy[swap[c]][1])<1,'ghost follows the mirrored body');
 });
 test('a brief uncertain elbow does not erase an otherwise observed serve',()=>{
  const f=fixture();f.frames[55].scores[8]=.2;
  const r=compareMotion(f);assert.equal(r.status,'available');if(r.status==='available')assert.ok(r.score>=99);
 });
-test('a prolonged hidden arm yields preview only, never a leg-dominated score',()=>{
+test('a prolonged hidden arm is down-weighted and labelled low confidence, never presented as full tracking',()=>{
  const f=fixture();for(const p of f.frames)if(p.time>4.1){p.scores[8]=.2;p.scores[10]=.2;}
- const r=compareMotion(f);assert.equal(r.status,'unavailable');if(r.status==='unavailable'){assert.ok(r.alignment);assert.ok(!('score' in r));}
+ const r=low(compareMotion(f),/hitting arm/i);if(r)assert.ok(r.regionCoverage.hittingArm<1);
 });
 test('walk-in and walk-out never stretch the movement or appear in mapping',()=>{
  const f=fixture();f.frames=f.frames.map(p=>({...p,time:p.time+10}));f.duration=25;
@@ -155,11 +167,11 @@ test('brief upper-body confidence loss keeps alignment without counting uncertai
  assert.equal(r.alignment.at(-1)!.time,5);assert.ok(r.alignment.every((p,i)=>i===0||p.referencePhase>=r.alignment[i-1].referencePhase));
 });
 
-test('sustained torso loss or missing hip anchors still prevents a whole-motion score',()=>{
+test('sustained torso loss or missing hip anchors falls back from the strict score to a low-confidence one',()=>{
  for(const hips of [false,true]){
   const f=fixture();
   for(const p of f.frames)if(p.time>=2.8&&p.time<=(hips?2.85:3.2))for(const j of hips?[11,12]:[5,6])p.scores[j]=.2;
-  const r=compareMotion(f);assert.equal(r.status,'unavailable');assert.ok(!('score' in r));
+  low(compareMotion(f),/insufficient joint tracking/);
  }
 });
 
@@ -174,8 +186,8 @@ test('12:26:24 live recording retains recovery from original camera observations
 
 test('an invalid setup anchor reports setup uncertainty without blaming the observed finish',()=>{
  const f=fixture();f.stages[0]={id:'setup',status:'estimated',time:1.95,start:1.7,end:1.95};
- const r=compareMotion(f);assert.equal(r.status,'unavailable');if(r.status!=='unavailable')return;
- assert.match(r.reason,/setup/i);assert.doesNotMatch(r.reason,/follow-through|finish|record the whole serve/i);
+ const r=low(compareMotion(f),/setup/i);if(!r)return;
+ assert.doesNotMatch(r.warnings[0],/follow-through|finish|record the whole serve/i);
 });
 
 test('12:32:47 recording scores with the observed pre-raise setup despite an occluded toss',()=>{
