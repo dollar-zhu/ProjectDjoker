@@ -93,5 +93,24 @@ class Webcam(unittest.TestCase):
             self.assertIsNotNone(first); self.assertGreater(cam.dropped, 0)  # slow consumer -> stale frames dropped
             self.assertFalse(cam.connected); cam.close()
 
+VOICE = ROOT / 'models/piper/en_US-joe-medium.onnx'
+
+class Speech(unittest.TestCase):
+    def test_piper_without_voice_falls_back_to_text(self):
+        with mock.patch('live.audio.shutil.which', return_value=None):
+            spk = Speaker('piper', voice='/nonexistent/voice.onnx')
+            r = spk.speak('Good leg drive.', 'GOOD_LEG_DRIVE')
+        self.assertIsNotNone(spk.voice_error); self.assertTrue(r.ok); self.assertEqual(r.backend, 'print')
+
+    @unittest.skipUnless(VOICE.exists(), 'Piper voice not downloaded')
+    def test_piper_synthesizes_and_plays_through_player(self):
+        import wave
+        spk = Speaker('piper', voice=str(VOICE)); self.assertIsNone(spk.voice_error)
+        import shutil; true = shutil.which('true')  # stand-in player: no sound during tests
+        with mock.patch('live.audio.shutil.which', side_effect=lambda t: true if t == 'aplay' else None):
+            r = spk.speak('Bend both knees a little more as the ball goes up.')
+        self.assertEqual((r.ok, r.backend), (True, 'piper'))
+        with wave.open(str(spk._tmp_wav)) as w: self.assertGreater(w.getnframes() / w.getframerate(), 1.0)
+
 if __name__ == '__main__':
     unittest.main()

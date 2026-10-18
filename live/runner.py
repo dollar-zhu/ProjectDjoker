@@ -64,7 +64,8 @@ def main(argv=None):
     p.add_argument('--serve-type', choices=['1', '2', 'unknown'])
     p.add_argument('--handedness', choices=['left', 'right', 'unknown'])
     p.add_argument('--allow-unvalidated-reference', action='store_true', default=None)
-    p.add_argument('--audio', choices=['print', 'say', 'espeak', 'wav'])
+    p.add_argument('--audio', choices=['print', 'piper', 'say', 'espeak', 'wav'])
+    p.add_argument('--voice', help='Piper voice .onnx (audio backend piper)')
     p.add_argument('--qwen-url'); p.add_argument('--qwen-model'); p.add_argument('--qwen-timeout', type=float)
     p.add_argument('--out', help='Output folder for runs')
     a = p.parse_args(argv)
@@ -72,7 +73,7 @@ def main(argv=None):
                  'pose': {'crop': [float(v) for v in a.crop.split(',')] if a.crop else None},
                  'analysis': {'serve_type': a.serve_type, 'handedness': a.handedness},
                  'reference': {'allow_unvalidated_reference': a.allow_unvalidated_reference},
-                 'audio': {'backend': a.audio}, 'session': {'out_dir': str(Path(a.out).resolve()) if a.out else None},
+                 'audio': {'backend': a.audio, 'voice': str(Path(a.voice).resolve()) if a.voice else None}, 'session': {'out_dir': str(Path(a.out).resolve()) if a.out else None},
                  'phraser': {'backend': 'qwen' if a.qwen_url else None, 'url': a.qwen_url, 'model': a.qwen_model, 'timeout_s': a.qwen_timeout}}
     run(build(load_config(a.config, overrides)), trigger_at=a.trigger_at)
 

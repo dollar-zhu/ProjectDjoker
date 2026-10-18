@@ -100,13 +100,22 @@ def check_camera(spec, seconds=3.0):
     detail.update(frames=frames, capture_fps=frames / seconds, frame_shape=shape)
     return (PASS if frames / seconds >= 10 else WARN), f'{frames / seconds:.1f} fps at {shape}', detail
 
-def check_audio(backend, speak, wav_dir=None):
+def check_audio(backend, speak, wav_dir=None, voice=None):
     from live.audio import Speaker
     tools = {t: bool(shutil.which(t)) for t in ('espeak-ng', 'aplay', 'afplay', 'say')}
-    need = {'say': ['say'], 'espeak': ['espeak-ng'], 'wav': ['aplay', 'afplay'], 'print': []}[backend]
+    need = {'say': ['say'], 'espeak': ['espeak-ng'], 'wav': ['aplay', 'afplay'], 'piper': ['aplay', 'afplay'], 'print': []}[backend]
     detail = {'tools': tools, 'configured_backend': backend}
     if backend == 'print': return WARN, 'audio backend is print (text only)', detail
     if not any(tools[t] for t in need): return FAIL, f"backend {backend} needs {' or '.join(need)}, not found", detail
+    if backend == 'piper':
+        t0 = time.perf_counter(); spk = Speaker('piper', wav_dir or 'audio', voice); detail.update(voice=voice, load_ms=(time.perf_counter() - t0) * 1000)
+        if spk.voice_error: return FAIL, f'piper voice did not load ({spk.voice_error})', detail
+        t0 = time.perf_counter(); wav = spk._piper_wav('Djoker check. Audio is working.'); detail['synth_ms'] = (time.perf_counter() - t0) * 1000
+        if wav is None: return FAIL, 'piper synthesis failed', detail
+        if speak:
+            r = spk.speak('Djoker check. Audio is working.', 'READY'); detail['spoke'] = r.ok
+            if not r.ok or r.backend != 'piper': return FAIL, f'speech did not play ({r.error or r.backend})', detail
+        return (PASS if detail['synth_ms'] <= 1000 else WARN), f"piper {Path(voice).stem}: {detail['synth_ms']:.0f} ms to synthesize a test sentence", detail
     if backend == 'wav':
         codes = json.loads((Path(wav_dir) / 'speech_codes.json').read_text()) if wav_dir and (Path(wav_dir) / 'speech_codes.json').exists() else {}
         missing = [c for c in codes if not (Path(wav_dir) / f'{c}.wav').exists()]
@@ -141,7 +150,7 @@ def main(argv=None):
     cfg = load_config(a.config)
     checks = [('platform', lambda: check_platform()), ('assets', lambda: check_assets(cfg)),
               ('golden_pose', lambda: check_golden_pose(cfg)), ('golden_decisions', lambda: check_golden_decisions(cfg)),
-              ('camera', lambda: check_camera(a.camera)), ('audio', lambda: check_audio(cfg['audio']['backend'], a.speak, cfg['audio'].get('wav_dir'))),
+              ('camera', lambda: check_camera(a.camera)), ('audio', lambda: check_audio(cfg['audio']['backend'], a.speak, cfg['audio'].get('wav_dir'), cfg['audio'].get('voice'))),
               ('qwen', lambda: check_qwen(cfg))]
     report = {'tool': 'djoker-check', 'time': time.strftime('%Y-%m-%dT%H:%M:%S%z'), 'config': cfg['_config_path'], 'checks': {}}
     for name, fn in checks:
