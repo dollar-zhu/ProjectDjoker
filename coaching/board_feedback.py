@@ -1,7 +1,8 @@
 """Board-side serve feedback: DMS packet + compact reference + rules -> one Feedback decision and a Qwen request.
 
 Mirrors what the device does after the completion trigger; needs only numpy and the DMS package.
-Qwen may only rephrase approved text; `validate` checks its reply and falls back to canonical speech.
+The phrasing model (Gemma 4 E2B) may only add praise and linking words around the approved cue (`coach_request`);
+`validate` checks its reply and falls back to canonical speech. `qwen_request` is the earlier free-rephrase prompt, kept for evals.
 """
 import argparse
 import json
@@ -28,6 +29,43 @@ SYSTEM_PROMPT = (
     "- Never mention injury, pain, serve speed, the ball's flight, the racket, scores, or that copying Djokovic guarantees improvement.\n"
     "- Respond with JSON only: {{\"speech\": \"...\"}}"
 )
+# Coach voice (v2, v3). Small on-device models (Gemma 1-2B) follow worked examples far better than rule lists, so the
+# rules stay short and the examples carry the style. Example cues are deliberately outside the rule set (toss arm,
+# landing): if a model copies one into a reply, the topic check rejects it. Measurements and reference values are not sent.
+# v3 (default): evals showed paraphrased cues drift into new advice ("keep your back knee tucked"), so the model now
+# only adds praise and a few linking words; coaching content lives in the rules' canonical_speech.
+COACH_PROMPTS = {
+    'v2': ("You are a friendly tennis coach. A player just hit a serve and hears you through a small speaker. "
+           "Say the coaching note out loud in your own words.\n"
+           "- One or two short sentences, at most {max_words} words.\n"
+           "- If there is praise, say it first, briefly.\n"
+           "- Then the cue: keep its body parts and timing, phrased as one thing to feel on the next serve.\n"
+           "- No numbers, angles or degrees. Do not mention Djokovic or any other player.\n"
+           "- Never add advice, body parts or reasons that are not in the note.\n"
+           "- Only if the note has a Score line, start with \"Score N.\" using that number.\n"
+           "Reply with JSON only: {{\"speech\": \"...\"}}",
+           [("Score: 72\nPraise: Good leg drive.\nCue: Keep your tossing arm up a moment longer.",
+             '{"speech": "Score 72. Great push from the legs. Next one, leave that tossing arm up a beat longer."}'),
+            ("Cue: Land on your front foot after contact.",
+             '{"speech": "Let your weight carry you through so you land on your front foot after contact."}'),
+            ("Cue: none", '{"speech": "Got that one. Ready for the next serve when you are."}')]),
+    'v3': ("You are a friendly tennis coach. A player just hit a serve and hears you through a small speaker.\n"
+           "- If there is praise, say it first in a few warm words.\n"
+           "- Then say the cue almost word for word. You may add a short lead-in such as \"Next one,\".\n"
+           "- If there is no praise, do not invent any; start with the cue.\n"
+           "- If there is a Score line, start with \"Score N.\" using that number. Say no other numbers.\n"
+           "- At most {max_words} words. Add nothing else.\n"
+           "Reply with JSON only: {{\"speech\": \"...\"}}",
+           [("Score: 72\nPraise: Good leg drive.\nCue: Keep your tossing arm up a moment longer.",
+             '{"speech": "Score 72. Great push from the legs. Next one, keep your tossing arm up a moment longer."}'),
+            ("Cue: Land on your front foot after contact.",
+             '{"speech": "Next one, land on your front foot after contact."}'),
+            ("Praise: Good reach at contact.\nCue: Turn your chest to the side as you toss.",
+             '{"speech": "Nice full reach. Now turn your chest to the side as you toss."}')]),
+}
+PRAISE_WORDS = re.compile(r'\b(good|great|nice|well done|excellent|perfect|solid)\b', re.I)
+PRO_NAMES = re.compile(r'djokovic|novak|sinner|federer|nadal|alcaraz|\bpros?\b', re.I)
+
 # Any of these words in Qwen's speech must already appear in the approved praise/observation/cue text.
 TOPIC_WORDS = ['knee', 'leg', 'hip', 'shoulder', 'elbow', 'wrist', 'arm', 'trunk', 'chest', 'head', 'foot', 'feet', 'ankle',
                'toss', 'jump', 'land', 'swing', 'contact', 'stance', 'weight', 'balance']
@@ -81,13 +119,7 @@ def decide(packet_path, reference_path, rules_path, serve_type='unknown', allow_
     if ref['validation']['status'] != 'validated' and not allow_unvalidated_reference: blocked.append('reference_unvalidated')
     reference_ok = not blocked
     if reference_ok: evidence.append(f"{ref['reference_id']}:{group}@yaw{row['yaw_deg']:+d}")
-    ordered = sorted(rules['rules'], key=lambda r: (r['priority'], r['id']))
-    matches = [r for r in ordered if r['kind'] == 'cue' and (reference_ok or r['mode'] != 'reference') and r['mode'] != 'retry'
-               and evaluate(r, metrics, row if r['mode'] == 'reference' else None)]
-    cue = matches[0]  # one spoken cue; other matching reference findings are kept for the record, not spoken
-    secondary = [{'rule_id': r['id'], 'observation': fill(r['observation'], metrics, row), 'suggestion': fill(r['suggestion'], metrics, row),
-                  'drill': r['drill']} for r in matches[1:] if r['mode'] == 'reference']
-    praise = next((r for r in ordered if r['kind'] == 'praise' and reference_ok and evaluate(r, metrics, row)), None)
+    cue, secondary, praise = select(metrics, row, rules, reference_ok)
     context = {'estimated_view_yaw_deg': round(yaw, 1), 'reference_yaw_deg': row['yaw_deg'], 'reference_group': group,
                'reference_n': row['front_knee_at_load']['n'] if row['front_knee_at_load'] else 0}
     rating = None
@@ -98,6 +130,17 @@ def decide(packet_path, reference_path, rules_path, serve_type='unknown', allow_
                   allow_unvalidated_reference, rating=rating, rating_cfg=rating_cfg)
     fb['secondary_findings'] = secondary; fb['not_measured'] = (rating_cfg or {}).get('not_measured', {})
     return fb
+
+def select(metrics, row, rules, reference_ok):
+    """Priority-ordered rule match: (spoken cue, secondary findings, praise or None)."""
+    ordered = sorted(rules['rules'], key=lambda r: (r['priority'], r['id']))
+    matches = [r for r in ordered if r['kind'] == 'cue' and (reference_ok or r['mode'] != 'reference') and r['mode'] != 'retry'
+               and evaluate(r, metrics, row if r['mode'] == 'reference' else None)]
+    cue = matches[0]  # one spoken cue; other matching reference findings are kept for the record, not spoken
+    secondary = [{'rule_id': r['id'], 'observation': fill(r['observation'], metrics, row), 'suggestion': fill(r['suggestion'], metrics, row),
+                  'drill': r['drill']} for r in matches[1:] if r['mode'] == 'reference']
+    praise = next((r for r in ordered if r['kind'] == 'praise' and reference_ok and evaluate(r, metrics, row)), None)
+    return cue, secondary, praise
 
 def feedback(shot, cue, metrics, row, blocked, evidence, rules, praise, context=None, demo=False, rating=None, rating_cfg=None):
     score = rating and rating.get('score')
@@ -110,7 +153,8 @@ def feedback(shot, cue, metrics, row, blocked, evidence, rules, praise, context=
         'rules_version': rules['version'], 'rules_status': rules['status'], 'evidence_ids': evidence,
         'observation': fill(cue['observation'], metrics, row), 'praise': praise and praise['observation'],
         'suggestion': fill(cue['suggestion'], metrics, row), 'drill': cue['drill'],
-        'canonical_text': speech, 'speech_codes': [c for c in [praise and praise['speech_code'], cue['speech_code']] if c],
+        'canonical_text': speech, 'praise_speech': praise and praise['canonical_speech'],
+        'cue_speech': fill(cue['canonical_speech'], metrics, row) if cue['mode'] != 'observation' else None, 'speech_codes': [c for c in [praise and praise['speech_code'], cue['speech_code']] if c],
         'allowed_numbers': numbers, 'max_words': rules['max_speech_words'], 'metrics': metrics, 'context': context,
         'reference_blocked_reasons': blocked, 'rating': rating,
         'uncertainty': ('UNVALIDATED DEMO: reference comparison enabled without validation records; single 2D camera; '
@@ -137,7 +181,18 @@ def qwen_request(fb, model):
             'messages': [{'role': 'system', 'content': SYSTEM_PROMPT.format(max_words=fb['max_words'])},
                          {'role': 'user', 'content': json.dumps(payload, indent=1)}]}
 
-def validate(fb, reply_text):
+def coach_request(fb, model, version='v3'):
+    """Coach-voice request: only praise, the approved cue and the score reach the model; no angles or reference values."""
+    prompt, examples = COACH_PROMPTS[version]
+    score = (fb.get('rating') or {}).get('score')
+    note = '\n'.join(line for line in [score is not None and f'Score: {score}', fb.get('praise_speech') and f"Praise: {fb['praise_speech']}",
+                                       f"Cue: {fb.get('cue_speech') or 'none'}"] if line)
+    shots = [m for q, a in examples for m in ({'role': 'user', 'content': q}, {'role': 'assistant', 'content': a})]
+    return {'model': model, 'temperature': 0.2, 'max_tokens': 80,
+            'messages': [{'role': 'system', 'content': prompt.format(max_words=fb['max_words'])}, *shots,
+                         {'role': 'user', 'content': note}]}
+
+def validate(fb, reply_text, coach=False):
     """Accept Qwen's speech only if it is short, uses allowed numbers, and avoids banned claims; else canonical text."""
     reasons = []
     try:
@@ -147,11 +202,14 @@ def validate(fb, reply_text):
         reasons.append('reply_not_strict_json')
     if not text: reasons.append('empty')
     if len(text.split()) > fb['max_words']: reasons.append('too_long')
-    extra = {int(float(n)) for n in re.findall(r'\d+(?:\.\d+)?', text)} - set(fb['allowed_numbers'])
+    allowed = {(fb.get('rating') or {}).get('score')} if coach else set(fb['allowed_numbers'])  # v2 speaks no measurements
+    extra = {int(float(n)) for n in re.findall(r'\d+(?:\.\d+)?', text)} - allowed
     if extra: reasons.append(f'unapproved_numbers:{sorted(extra)}')
     if BANNED.search(text): reasons.append('banned_claim')
+    if coach and PRO_NAMES.search(text): reasons.append('mentions_pro')
+    if coach and not fb.get('praise') and PRAISE_WORDS.search(text): reasons.append('praise_not_in_note')
     if re.search(r'\bscore', text, re.I) and (fb.get('rating') or {}).get('score') is None: reasons.append('score_without_rating')
-    approved = ' '.join(x for x in (fb['praise'], fb['observation'], fb['suggestion'], fb['canonical_text']) if x).lower()
+    approved = ' '.join(x for x in (fb['praise'], fb['observation'], fb['suggestion'], fb['canonical_text'], fb.get('cue_speech')) if x).lower()
     new_topics = [w for w in TOPIC_WORDS if re.search(rf'\b{w}', text, re.I) and not re.search(rf'\b{w}', approved)]
     if new_topics: reasons.append(f'unapproved_topics:{new_topics}')
     hard = [r for r in reasons if r != 'reply_not_strict_json']
@@ -166,18 +224,18 @@ def main():
     d.add_argument('--rules', type=Path, default=ROOT / 'coaching/rules.json')
     d.add_argument('--serve-type', choices=['1', '2', 'unknown'], default='unknown')
     d.add_argument('--allow-unvalidated-reference', action='store_true', help='Demo only: enable Djokovic-relative rules before validation')
-    d.add_argument('--model', default='qwen2.5:1.5b-instruct')
+    d.add_argument('--model', default='gemma4:e2b')
     v = sub.add_parser('validate'); v.add_argument('feedback', type=Path); v.add_argument('reply', type=Path, help="File with Qwen's reply text, or - for stdin")
     a = p.parse_args()
     if a.cmd == 'decide':
         fb = decide(a.packet, a.reference, a.rules, a.serve_type, a.allow_unvalidated_reference)
         a.out.mkdir(parents=True, exist_ok=True)
         (a.out / 'feedback.json').write_text(json.dumps(fb, indent=2) + '\n')
-        (a.out / 'qwen_request.json').write_text(json.dumps(qwen_request(fb, a.model), indent=2) + '\n')
+        (a.out / 'phrase_request.json').write_text(json.dumps(coach_request(fb, a.model), indent=2) + '\n')
         print(json.dumps({k: fb[k] for k in ('mode', 'rule_id', 'praise_rule_id', 'canonical_text', 'reference_blocked_reasons')}, indent=1))
     else:
         fb = json.loads(a.feedback.read_text()); reply = sys.stdin.read() if str(a.reply) == '-' else a.reply.read_text()
-        print(json.dumps(validate(fb, reply), indent=1))
+        print(json.dumps(validate(fb, reply, coach=True), indent=1))
 
 if __name__ == '__main__':
     main()

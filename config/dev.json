@@ -28,7 +28,7 @@
   "phraser": {
     "backend": "canonical",
     "url": "http://127.0.0.1:11434/v1/chat/completions",
-    "model": "qwen2.5:1.5b-instruct",
+    "model": "gemma4:e2b",
     "timeout_s": 1.0
   },
   "audio": {

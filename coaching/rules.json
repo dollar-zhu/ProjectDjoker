@@ -204,7 +204,7 @@
       "observation": "At your deepest bend your front knee was {front_knee_at_load.user:.0f} degrees and your back knee {back_knee_at_load.user:.0f}.",
       "suggestion": null,
       "drill": null,
-      "canonical_speech": "Serve recorded. Front knee {front_knee_at_load.user:.0f}, back knee {back_knee_at_load.user:.0f} degrees at your lowest point.",
+      "canonical_speech": "Got that serve. Go again when you are ready.",
       "speech_code": "SERVE_OBSERVATION"
     },
     {
