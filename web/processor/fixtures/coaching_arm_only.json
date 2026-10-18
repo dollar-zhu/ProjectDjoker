@@ -1,0 +1,27 @@
+{
+  "synthetic": true,
+  "description": "Counterfactual evidence mask: retain only measured arm rise; all leg and recovery evidence withheld. Not a new video observation.",
+  "stages": [
+    {
+      "id": "toss",
+      "label": "Tossing-arm rise",
+      "status": "estimated",
+      "time": 2.35,
+      "frame": 47,
+      "start": 1.5,
+      "end": 2.35,
+      "detail": "Estimated tossing-arm rise. Ball release and toss apex are not measured.",
+      "evidence": [
+        {
+          "id": "toss",
+          "observation": "The tossing wrist rises above shoulder level during preparation in this view.",
+          "cue": "Replay the arm rise into loading and check how the two movements overlap.",
+          "measurements": {
+            "wrist_rise_torso_lengths": 1.89
+          }
+        }
+      ],
+      "method": "body-stages-v2"
+    }
+  ]
+}

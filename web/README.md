@@ -48,7 +48,7 @@ Validation: ready-pose and countdown tests cover transient gestures, partial vis
 1. Upload one serve (0.5–20 seconds, up to 128 MB).
 2. Select the view and hitting hand. Drag a player box on the paused preview, including overhead hands and feet. The box is fixed throughout the clip; ensure the player remains inside it.
 3. Process. Jobs are serialized locally and progress is shown in the interface.
-4. Scrub, toggle the skeleton, and select a body-movement stage. Each available stage replays its evidence interval at 0.25× and stops at the interval end. **Analyse with Gemma** reviews the available stage evidence and selects a replay focus without requiring a pro overlay. Download the result JSON from Processing & evidence.
+4. Scrub, toggle the skeleton, and select a body-movement stage. Each available stage replays its evidence interval at 0.25× and stops at the interval end. **Get coaching with Gemma 4** produces one supported practice focus, a plain-language cue, a short drill and a check for the next recording, without requiring a pro overlay. Download the result JSON from Processing & evidence.
 
 ## Movement stages and Gemma review
 
@@ -56,7 +56,13 @@ Validation: ready-pose and countdown tests cover transient gestures, partial vis
 
 The existing `events` loading/reach contract remains compatible with the professional overlay. Motion alignment keeps those two anchors and adjusts timing within phases; setup/finish evidence bounds the compared interval. These are estimated body phases, not independently validated reference alignment points. Pose analysis still samples at 20 fps. This feature does not claim higher capture precision or infer real speed from slow-motion footage.
 
-The main review shows a measured observation and replay cue for each available stage. `POST /api/commentary` with only `{jobId}` loads the stored result on the server and sends the supported observations to **Gemma 3 1B on Ventuno through ExecuTorch QNN**. Gemma selects one evidence ID; the returned observation and cue are drawn from that evidence, not free-form diagnosis. It sees measurements, not video. The older loading-comparison commentary endpoint is retained. Unavailable, busy, or rejected model output has a visibly labelled measured fallback, never a fabricated Gemma result. Cache keys include stage evidence and prompt version; rejected/unavailable replies can be retried.
+The main review puts practice instructions ahead of measurements. Raw stage measurements remain in collapsed tracking details and result JSON. `POST /api/commentary` accepts only `{jobId}`, loads the stored result, and derives supported candidates without sending raw angles or video to the language model. **Gemma 4 E2B runs on Ventuno CPU through Ollama**, reached by ADB executing loopback HTTP on the board. There is no Mac/cloud/Gemma 3 fallback. This is not verified NPU acceleration or autonomous visual diagnosis.
+
+When framing/track evidence is insufficient, the app asks for a usable recording immediately without invoking Gemma or claiming the model failed.
+
+The shared coach v3 prompt lives in `coaching/board_feedback.py` (`coach_request`). The app selects the first supported practice card in rhythm, recovery, preparation order. Gemma receives only that approved cue and returns a short `speech` response, checked by the shared coach validator. `processor/coaching_cards.json` retains the authored observation, purpose, drill and success check. The earlier local focus-selection prompt is stashed for later iteration. Missing tracking never becomes a fault, and similarity to a professional never prescribes an ideal knee angle. A conservative repeated-frame gate asks for a clearer recording when more than 90% of consecutive reduced frames are almost identical; it also may reject extreme repeated-frame slow motion. It does not detect every edited or poor recording.
+
+Unavailable, busy or rejected model output retains a visibly labelled practice-card fallback. Cache keys include video, supported evidence, quality gate, prompt, card content, model digest and generation settings. Only completed accepted generations are cached. Raw requests, responses and timings are kept under ignored `local/commentary/`. A valid response is not proof of coaching accuracy; the development evaluation and manual-review gaps are documented in `docs/research/2026-10-18-gemma4-ventuno-feedback.md`.
 
 Validation includes missing tossing-arm evidence, short tracking interruptions, walk-in timestamp offsets, clipped finish, supported model selections, rejection of invented evidence, offline fallback, API job validation and bounded stage replay. Saved clips are development examples, not a held-out accuracy benchmark. The latest saved recording now supports follow-through and finish through observed elbow/body recovery even while the hitting wrist is occluded. Stage metadata is versioned as `body-stages-v2`.
 
@@ -111,9 +117,25 @@ Both cohorts contain individual poses, not original broadcast videos. Attributio
 
 Click **Overlay Djokovic/Sinner · 0.25×** after selecting a reference. Playback starts at the supported alignment's beginning and stops at its end, at quarter speed. The green user skeleton and dashed blue reference share the video canvas. The reference is first rotated once into an estimated rear view using its post-reach hip axis (phases 85–100). The overlay stays at that rear view without rotation or mirroring; torso size and position are then matched to the user. Individual limbs are not warped to match. Missing phase/torso evidence disables overlay; loss of hip tracking temporarily hides it. Hide overlay restores normal speed.
 
-A loading-position comparison selects one provisional knee-bend practice focus. It is an exploratory reference comparison, not a validated technique diagnosis or instruction to match exact pro angles. The `/api/commentary` route sends the measured angles and approved cue to the existing Gemma 3 1B ExecuTorch/QNN runner on Ventuno. The model may rephrase the cue; a validator rejects new measurements, unsupported body/action advice, and reversed bend directions. Board errors, busy status or rejected replies retain explicit template provenance. Validated responses are cached by evidence; requests and runner output are stored under `local/commentary/` (ignored). Each board request uses its own directory under `/home/arduino/djoker-commentary/`, a 60-second runner timeout, and the existing model/tokenizer pair. No model binaries or SDKs are checked into Git.
+The legacy loading-position endpoint now describes the comparison without prescribing a deeper or shallower bend. It returns reviewed template provenance; it does not call Gemma 3. Use the main coaching panel for the Gemma 4 practice plan.
 
-Model paths are in `processor/commentary.py`. This uses Gemma rather than Qwen because the supplied IoT guide does not publish its Qwen model/tokenizer bundle. Model loading and generation happen on the board; pose alignment and deterministic measurements happen on the Mac. This is not a vision-language model watching the video, nor unconstrained LLM diagnosis.
+### Gemma 4 on Ventuno
+
+The current installation uses the official ARM64 Ollama runtime under `/home/arduino/djoker-gemma4/runtime`, with `gemma4:e2b` model files under `/home/arduino/djoker-gemma4/models`. The service binds to **127.0.0.1 on the board**, with cloud features disabled. No new LAN port or Mac HTTP forwarding is needed. The runtime and model weights are not committed.
+
+Install or refresh the persistent user service from the repository root:
+
+```sh
+web/processor/start_gemma4_ventuno.sh
+adb -s 242692658 shell 'curl -fsS http://127.0.0.1:11434/api/tags'
+.venv/bin/python web/processor/eval_coach.py --out local/gemma4-eval
+```
+
+The start script expects the installed runtime and E2B model. On a new board, install the [official ARM64 runtime](https://docs.ollama.com/linux#arm64-install) into that runtime directory, set `OLLAMA_MODELS` to the models directory, and pull `gemma4:e2b` on the board. The evaluation fixture references this workspace's local recordings/results; it fails when those assets are missing rather than inventing results. Replace paths with available reviewed fixtures for a fresh checkout. Model inference is forced to CPU with four threads and a 4096-token context. `DJOKER_SERIAL` selects the ADB board; `DJOKER_GEMMA_MODEL` accepts only `gemma4:e2b` in this evaluated path.
+
+The script enables `djoker-gemma4.service` in the board's user systemd manager, with restart on failure. User lingering is already enabled for `arduino` on this board; it is required for startup without login. Logs are available with `journalctl --user -u djoker-gemma4.service` (ADB shells need `XDG_RUNTIME_DIR=/run/user/1000` and `DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus`). Reboot startup is configured but has not been tested by rebooting the board.
+
+The API allows up to 140 seconds for the board process; board inference itself is bounded at 120 seconds. A second concurrent request gets a labelled busy fallback. The model receives the selected approved cue, not raw measurements or video frames. The Mac still performs framing checks, evidence preparation, validation and rendering; pose inference retains its separate existing NPU/CPU path.
 
 Live recordings now derive a fixed horizontal player crop from at least ten full-body tracking observations, with padding and the full image height retained for raised hands and feet. Explicit player crops are preserved. Review quality checks exclude leading/trailing frames without full-body visibility; missing joints within the retained interval still face the same confidence and coverage gates. Event timestamps and frame indices remain relative to the original, untrimmed video.
 

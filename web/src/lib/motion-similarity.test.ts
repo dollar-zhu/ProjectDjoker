@@ -131,3 +131,32 @@ test('two observed reach frames at 20fps still align a fast serve through recove
  const r=compareMotion(f);assert.equal(r.status,'available',r.status==='unavailable'?r.reason:'');
  if(r.status==='available'){assert.equal(r.alignment.at(-1)!.referencePhase,100);assert.equal(r.alignment.at(-1)!.time,4.35);}
 });
+
+test('11:21:34 recording keeps the upward swing and finish through a brief shoulder-confidence dip',()=>{
+ const f=JSON.parse(readFileSync(new URL('./fixtures/serve-similarity-026.json',import.meta.url),'utf8'));
+ const before=structuredClone(f);
+ const r=compareMotion({...f,reference,view:'rear',handedness:'right'});
+ assert.equal(r.status,'available',r.status==='unavailable'?r.reason:'');if(r.status!=='available')return;
+ assert.equal(r.quality,'partial');assert.equal(r.alignment[0].time,1.35);
+ assert.equal(r.alignment.at(-1)!.time,3.55);assert.equal(r.alignment.at(-1)!.referencePhase,100);
+ assert.equal(referencePhaseAt(r.alignment,3.05),80);
+ assert.ok(referencePhaseAt(r.alignment,2.85)!>40);
+ assert.ok(r.excludedMeasurements.some(s=>/shoulder.*upward swing/i.test(s)));
+ assert.ok(r.regionCoverage.hittingArm<1);assert.deepEqual(f,before);
+});
+
+test('brief upper-body confidence loss keeps alignment without counting uncertain joints',()=>{
+ const f=fixture();
+ for(const p of f.frames)if(p.time>=2.8&&p.time<=2.85)for(const j of [5,6,7,8,9,10]){p.scores[j]=.2;p.xy[j]=[10000,-10000];}
+ const r=compareMotion(f);assert.equal(r.status,'available',r.status==='unavailable'?r.reason:'');if(r.status!=='available')return;
+ assert.equal(r.quality,'partial');assert.ok(r.score>=99);assert.ok(r.regionCoverage.torso<1);
+ assert.equal(r.alignment.at(-1)!.time,5);assert.ok(r.alignment.every((p,i)=>i===0||p.referencePhase>=r.alignment[i-1].referencePhase));
+});
+
+test('sustained torso loss or missing hip anchors still prevents a whole-motion score',()=>{
+ for(const hips of [false,true]){
+  const f=fixture();
+  for(const p of f.frames)if(p.time>=2.8&&p.time<=(hips?2.85:3.2))for(const j of hips?[11,12]:[5,6])p.scores[j]=.2;
+  const r=compareMotion(f);assert.equal(r.status,'unavailable');assert.ok(!('score' in r));
+ }
+});

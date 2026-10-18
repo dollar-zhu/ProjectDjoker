@@ -1,0 +1,16 @@
+[Unit]
+Description=Djoker Gemma 4 on Ventuno
+
+[Service]
+Environment=OLLAMA_HOST=127.0.0.1:11434
+Environment=OLLAMA_MODELS=/home/arduino/djoker-gemma4/models
+Environment=OLLAMA_NO_CLOUD=1
+Environment=OLLAMA_NUM_PARALLEL=1
+Environment=OLLAMA_MAX_LOADED_MODELS=1
+Environment=OLLAMA_CONTEXT_LENGTH=4096
+ExecStart=/home/arduino/djoker-gemma4/runtime/bin/ollama serve
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=default.target

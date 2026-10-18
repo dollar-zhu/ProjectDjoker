@@ -1,7 +1,20 @@
 'use client';
 import {useEffect,useRef,useState} from 'react';
 import type {Stage} from '@/lib/playback';
-type Analysis={focus_id:string|null;observation:string;cue:string;source:string;model_status:string;note?:string};
+export type Analysis={focus_id:string|null;stage_id?:string|null;title:string;observation:string;rationale:string;cue:string;drill:string;success_check:string;limitation:string;source:string;model_status:string;note?:string;evidence_times:number[]};
+
+export function CoachFeedback({analysis:a,onSeek,onSelect}:{analysis:Analysis;onSeek?:(time:number)=>void;onSelect?:(id:string)=>void}){
+ const status=a.model_status==='completed'?'YOUR PRACTICE PLAN':a.model_status==='insufficient_evidence'?'A CLEARER RECORDING':'REVIEWED PRACTICE CARD';
+ return <div className="coach-feedback">
+  <span className="pill">{status}</span><h3>{a.title}</h3>
+  <p className="observation">{a.observation}</p><p>{a.rationale}</p>
+  <p className="practice-cue"><strong>{a.cue}</strong></p>
+  <h4>Try this</h4><p>{a.drill}</p><h4>What to check</h4><p>{a.success_check}</p>
+  {a.evidence_times.length>0&&<div className="coach-evidence"><span>Evidence frames </span>{a.evidence_times.map(t=><button key={t} className="text-button" onClick={()=>{onSeek?.(t);if(a.stage_id)onSelect?.(a.stage_id);}} disabled={!onSeek}>View {t.toFixed(2)}s</button>)}</div>}
+  <p className="small muted">{a.limitation}</p><small>{a.source}</small>
+  {!['completed','insufficient_evidence'].includes(a.model_status)&&<p role="status">{a.model_status==='busy'?'Gemma 4 is busy.':a.model_status==='reply_rejected'?'The model response did not pass the feedback checks.':'Gemma 4 is unavailable.'} Showing the reviewed fallback; you can try again.</p>}
+ </div>;
+}
 
 export function MovementTimeline({stages,active,onReplay,onSelect}:{stages:Stage[];active:string;onReplay:(s:Stage)=>void;onSelect:(id:string)=>void}){
  const selected=stages.find(s=>s.id===active)||stages.find(s=>s.id==='loading')||stages[0];
@@ -12,7 +25,7 @@ export function MovementTimeline({stages,active,onReplay,onSelect}:{stages:Stage
  </div>;
 }
 
-export function MovementInsight({jobId,stages,active,onReplay,onSelect}:{jobId:string;stages:Stage[];active:string;onReplay:(s:Stage)=>void;onSelect:(id:string)=>void}){
+export function MovementInsight({jobId,stages,active,onReplay,onSelect,onSeek}:{jobId:string;stages:Stage[];active:string;onReplay:(s:Stage)=>void;onSelect:(id:string)=>void;onSeek?:(time:number)=>void}){
  const request=useRef<AbortController|null>(null);
  useEffect(()=>()=>request.current?.abort(),[]);
  const [analysis,setAnalysis]=useState<Analysis|null>(null),[busy,setBusy]=useState(false),[error,setError]=useState('');
@@ -20,16 +33,17 @@ export function MovementInsight({jobId,stages,active,onReplay,onSelect}:{jobId:s
  const observation=stage?.evidence[0];
  async function analyse(){
   request.current?.abort();const controller=new AbortController();request.current=controller;setBusy(true);setError('');
-  try{const r=await fetch('/api/commentary',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({jobId}),signal:controller.signal});const d=await r.json();if(!r.ok)throw Error(d.error);if(!controller.signal.aborted){setAnalysis(d);if(d.focus_id)onSelect(d.focus_id);}}
+  try{const r=await fetch('/api/commentary',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({jobId}),signal:controller.signal});const d=await r.json();if(!r.ok)throw Error(d.error);if(!controller.signal.aborted){setAnalysis(d);if(d.stage_id&&stages.some(s=>s.id===d.stage_id))onSelect(d.stage_id);}}
   catch(e){if(!controller.signal.aborted)setError((e as Error).message);}finally{if(!controller.signal.aborted)setBusy(false);}
  }
  return <div className="movement-insight">
-  <span className="pill">{stage?.status==='estimated'?'OBSERVED MOVEMENT · ESTIMATED STAGE':'STAGE NOT IDENTIFIED'}</span>
-  <h3>{stage?.label||'Your movement'}</h3><p className="observation">{observation?.observation||stage?.detail}</p>
-  {observation&&<><p className="practice-cue">{observation.cue}</p><button className="primary" onClick={()=>onReplay(stage)}>Replay this stage · 0.25× <span>↗</span></button></>}
-  <div className="gemma-review"><span className="eyebrow">REVIEW THE FULL MOVEMENT</span><p>Gemma considers the measured stages and picks one focus for your next replay.</p>
-   <button className="primary" disabled={busy||!stages.some(s=>s.status==='estimated')} onClick={analyse}>{busy?'Gemma is analysing…':analysis?'Analyse again with Gemma':'Analyse with Gemma'}</button>
-   <div aria-live="polite">{error&&<p role="alert" className="error">{error}</p>}{analysis&&<><p className="observation">{analysis.observation}</p><p className="practice-cue">{analysis.cue}</p><small>{analysis.source}</small>{analysis.model_status!=='completed'&&<p>{analysis.model_status==='busy'?'Gemma is busy. Showing the measured default focus; try again shortly.':analysis.model_status==='reply_rejected'?'Gemma’s reply did not match the available evidence. Showing the measured default focus.':'Gemma is unavailable. Showing the measured default focus.'}</p>}<p className="small muted">{analysis.note}</p></>}</div>
+  <div className="gemma-review"><span className="eyebrow">ONE FOCUS FOR YOUR NEXT REP</span>
+   <p>Your tracked movement selects a practice card. Gemma 4 on Ventuno phrases its approved cue; the drill and check stay unchanged.</p>
+   <button className="primary" disabled={busy} onClick={analyse}>{busy?'Gemma 4 is preparing your practice plan…':analysis?'Review again with Gemma 4':'Get coaching with Gemma 4'}</button>
+   <div aria-live="polite">{error&&<p role="alert" className="error">{error}</p>}{analysis&&<CoachFeedback analysis={analysis} onSeek={onSeek} onSelect={onSelect}/>}</div>
   </div>
+  {stage&&<details className="technical"><summary>Tracked movement: {stage.label}</summary><p>{observation?.observation||stage.detail}</p>
+   {observation&&<button className="text-button" onClick={()=>onReplay(stage)}>Replay this stage · 0.25×</button>}
+  </details>}
  </div>;
 }

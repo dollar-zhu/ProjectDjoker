@@ -37,6 +37,24 @@ function interpolate(frames:PoseFrame[],time:number):PoseFrame|null {
  const q=(time-a.time)/(b.time-a.time);
  return {time,xy:a.xy.map((p,j)=>p.map((v,k)=>v+(b.xy[j][k]-v)*q)),scores:a.scores.map((s,j)=>Math.min(s,b.scores[j]))};
 }
+/** Brief confidence dips can use remaining visible joints, bounded by reliable poses.
+ * Hip anchors must remain visible: both alignment and scoring are hip-relative.
+ * Low-confidence coordinates are still excluded by normalized()/regionDistance(). */
+function phaseTracked(samples:(PoseFrame|null)[]):boolean {
+ let lastReliable:PoseFrame|null=null,gap=false;
+ for(const p of samples){
+  if(!p||!visible(p,11)||!visible(p,12))return false;
+  const reliable=anchors(p)&&JOINTS.filter(([j])=>visible(p,j)).length>=8;
+  if(reliable){
+   if(gap&&(!lastReliable||p.time-lastReliable.time>MAX_GAP+1e-8))return false;
+   lastReliable=p;gap=false;
+  }else{
+   if(!lastReliable||p.time-lastReliable.time>MAX_GAP+1e-8)return false;
+   gap=true;
+  }
+ }
+ return !gap;
+}
 /** Matches processor/capture.py MotionFinish; the pose fixture pins browser/offline parity. */
 function observedFinish(frames:PoseFrame[],load:number,reach:number):number|null {
  const bodyIds=[5,6,11,12];
@@ -129,10 +147,10 @@ export function compareMotion(input:MotionInput):MotionSimilarity {
   if((segment===0&&start===null)||(segment===2&&end===null))continue;
   const from=phases[segment],to=phases[segment+1],n=to-from+1;
   const sampled=Array.from({length:n},(_,i)=>interpolate(frames,times[segment]+(times[segment+1]-times[segment])*i/(n-1)));
-  if(sampled.some(p=>!p||!anchors(p)||JOINTS.filter(([j])=>visible(p,j)).length<8)){reason||='A movement phase has insufficient joint tracking to align it reliably.';break;}
+  if(!phaseTracked(sampled)){reason||='A movement phase has insufficient joint tracking to align it reliably.';break;}
   const phaseWeight=(to-from)/100;
   for(const[k,[j]]of JOINTS.entries()){
-   if(sampled.filter(p=>visible(p!,j)).length/n<.9)excludedMeasurements.push(`${JOINT_NAMES[k]} partly hidden during ${PHASE_NAMES[segment]}; uncertain samples excluded.`);
+   if(sampled.some(p=>!visible(p!,j)))excludedMeasurements.push(`${JOINT_NAMES[k]} partly hidden during ${PHASE_NAMES[segment]}; uncertain samples excluded.`);
   }
   for(const region of REGIONS){
    const observed=sampled.filter(p=>region.joints.some(k=>visible(p!,JOINTS[k][0]))).length/n;

@@ -1,0 +1,56 @@
+{
+  "rhythm": {
+    "title": "Keep the bend-and-rise rhythm",
+    "mode": "reinforce",
+    "stage_id": "acceleration",
+    "cue": "Keep one smooth bend-and-rise rhythm.",
+    "drill": "Film five relaxed shadow serves. Let the knee bend flow into the upward movement without forcing a deeper bend.",
+    "success_check": "Compare the five clips: does the rise continue without an added pause? Keep the repetitions that feel comfortable and repeatable.",
+    "purpose": "Compare whether your knee bend flows into the rise across repetitions."
+  },
+  "baseline": {
+    "title": "Check your room behind the baseline",
+    "mode": "check",
+    "stage_id": "loading",
+    "cue": "Leave a little more room behind the baseline while keeping your natural step.",
+    "drill": "Film five easy serves with a low camera showing your feet and the baseline. Start a little farther back, keeping your natural step.",
+    "success_check": "Check for visible space between your shoes and the baseline before takeoff. If the line or shoes are hidden, improve the camera angle before judging.",
+    "purpose": "Check visible shoe clearance before takeoff without treating this clip as a foot-fault diagnosis."
+  },
+  "toss_check": {
+    "title": "Check toss placement from the side",
+    "mode": "check",
+    "stage_id": "toss",
+    "cue": "Check toss placement from the side before changing it.",
+    "drill": "Film five comfortable serves to the same target from the side, with the ball, racket and feet in frame.",
+    "success_check": "Check whether a backward reach repeats across the serves. Only consider changing toss placement after the side view supports that concern.",
+    "purpose": "Use a side recording to investigate whether backward reaching repeats, before changing toss placement."
+  },
+  "preparation": {
+    "title": "Make your preparation repeatable",
+    "mode": "practice",
+    "stage_id": "toss",
+    "cue": "Start comfortably and repeat the same relaxed arm rise.",
+    "drill": "Film five easy shadow motions from the same comfortable setup. Let the arms rise naturally; do not force a fixed height.",
+    "success_check": "Compare the starting position and arm-rise path across repetitions. Choose a comfortable sequence you can repeat.",
+    "purpose": "Compare your starting position and arm-rise path across repetitions."
+  },
+  "recovery": {
+    "title": "Finish the motion before resetting",
+    "mode": "reinforce",
+    "stage_id": "follow_through",
+    "cue": "Let the motion finish, then reset for the next repetition.",
+    "drill": "Film five relaxed shadow serves, allowing the arms and body to finish moving before returning to your starting position.",
+    "success_check": "Check that you can finish each repetition and reset without rushing into the next one. This is a practice check, not a measured balance score.",
+    "purpose": "Compare whether you finish each motion before resetting for the next repetition."
+  },
+  "recapture": {
+    "title": "Get a clearer view of the movement",
+    "mode": "recapture",
+    "stage_id": null,
+    "cue": "Record one uninterrupted movement with your feet and overhead space visible.",
+    "drill": "Use the original uninterrupted single-player video, rather than a paused or split-screen recording. Include setup, the upward action and recovery, with room above the racket.",
+    "success_check": "The new recording should show the whole movement clearly, including the feet and overhead space, without pauses or cuts.",
+    "purpose": "A clear uninterrupted recording lets us follow the movement without guessing through repeated or missing frames."
+  }
+}

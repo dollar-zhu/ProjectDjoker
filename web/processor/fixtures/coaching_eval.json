@@ -1,0 +1,69 @@
+{
+  "note": "Development regression clips manually reviewed by the coding assistant, not a certified tennis coach or held-out accuracy study. Expected focus tests the supported tracking contract; preferred coaching investigations not detected by tracking are documented as coverage gaps.",
+  "cases": [
+    {
+      "id": "bremen",
+      "video": "local/web-jobs/7132b650-0176-4aea-a7be-35787a8cbaf2/video.mp4",
+      "result": "local/web-jobs/7132b650-0176-4aea-a7be-35787a8cbaf2/result.json",
+      "expected_supported_focus": "recovery",
+      "manual_review": "Backward lean during upward swing around 0.65\u20131.20 s warrants a side-view check, not a toss-depth diagnosis. Automatic body evidence supports recovery only; it cannot reproduce this preferred investigation."
+    },
+    {
+      "id": "sara",
+      "video": "local/web-jobs/cf14e668-3b67-41cb-a462-346f751c2ff4/video.mp4",
+      "result": "local/web-jobs/cf14e668-3b67-41cb-a462-346f751c2ff4/result.json",
+      "expected_supported_focus": "recovery",
+      "manual_review": "Late foot reposition near baseline around 1.50\u20131.80 s warrants clearance check, not a foot-fault call. Automatic body evidence cannot establish the line and uses visible recovery."
+    },
+    {
+      "id": "indoor",
+      "video": "local/web-jobs/b4268da1-578a-43bb-8d52-00df33a75ac5/video.mp4",
+      "result": "local/web-jobs/b4268da1-578a-43bb-8d52-00df33a75ac5/result.json",
+      "expected_supported_focus": "recovery",
+      "manual_review": "Knee bend and rise around 2.10\u20132.70 s; overhead action cropped. Body tracking misses leg continuity but sees arm recovery around 2.75\u20133.15 s."
+    },
+    {
+      "id": "stephen",
+      "video": "local/web-jobs/37c80d80-3b26-4e9e-8743-7574433f0202/video.mp4",
+      "result": "local/web-jobs/37c80d80-3b26-4e9e-8743-7574433f0202/result.json",
+      "expected_supported_focus": "recapture",
+      "manual_review": "Mostly paused screen recording; request uninterrupted original."
+    },
+    {
+      "id": "shadow_white",
+      "video": "local/web-jobs/02654433-f1e2-4bb5-aa40-8dc21b040650/video.mp4",
+      "result": "local/web-jobs/02654433-f1e2-4bb5-aa40-8dc21b040650/result.json",
+      "expected_supported_focus": "recovery",
+      "manual_review": "No racket or ball. Visible bend/rise and arm recovery; missing intermediate leg tracking is not faulty technique."
+    },
+    {
+      "id": "shadow_black",
+      "video": "local/web-jobs/f90f3a1c-8350-4577-9be8-64bcd3da994d/video.mp4",
+      "result": "local/web-jobs/f90f3a1c-8350-4577-9be8-64bcd3da994d/result.json",
+      "expected_supported_focus": "rhythm",
+      "manual_review": "No racket or ball. Visible knee loading and rise around 2.8\u20133.55 s; later recovery visible."
+    },
+    {
+      "id": "federer",
+      "video": "local/gemma4-iteration/fede0000-0000-4000-a000-000000000001/video.mp4",
+      "result": "local/gemma4-iteration/fede0000-0000-4000-a000-000000000001/result.json",
+      "expected_supported_focus": "recapture",
+      "coverage_gap": "Manually visible bend and rise, but current body tracker supplies no supported stages.",
+      "manual_review": "Slow-motion loading then extension around 5.4\u20139.91 s. Landing absent. Trackability gap must stay explicit."
+    },
+    {
+      "id": "vishal",
+      "video": "benchmark/manual/samples/a003_vishal.mp4",
+      "result": null,
+      "expected_supported_focus": "recapture",
+      "manual_review": "Small mostly paused split screen; request uninterrupted single-player original."
+    },
+    {
+      "id": "counterfactual_arm_only",
+      "video": "local/web-jobs/02654433-f1e2-4bb5-aa40-8dc21b040650/video.mp4",
+      "result": "web/processor/fixtures/coaching_arm_only.json",
+      "expected_supported_focus": "preparation",
+      "manual_review": "Synthetic evidence mask over the reviewed white-shirt clip. Only arm rise is supplied. Do not infer knee bend, leg quality, contact or recovery from absent evidence."
+    }
+  ]
+}

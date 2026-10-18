@@ -114,30 +114,34 @@ export function LiveAudio({active}:{active:boolean}){
   try{await command(body);}catch(e){setError((e as Error).message);}finally{if(mounted.current)setWorking(false);}
  }
  const ready=active&&status.available,canTalk=ready&&status.enabled&&!status.muted&&status.state!=='SPEAKING'&&!working;
- return <div aria-label="Live voice controls">
-  <h3>Voice coach <span role="img" aria-label={status.heart_ready?'Browser heart: audio ready':'Browser heart: audio not ready'} style={{color:status.heart_ready?'#ec4899':'#dc2626'}}>♥</span></h3>
-  <p role="status">{ready?`${status.state} · ${status.paired?'Paired':'Not paired'} · ${status.connected?'Connected':'Disconnected'} · ${status.audio_ready?'Audio ready':'Audio not ready'}`:'Audio disconnected'}</p>
-  <p className="small muted">The pink/red heart is a browser indicator, not a physical LED. Playback requires a configured audio device on the Python worker host{status.host?` (${status.host})`:''}, not the adb board. Hold to talk is half-duplex; wait for speech to finish.</p>
-  <p className="small muted">Indicator capability: {status.led_capability||'browser'}. The optional board matrix is blue monochrome (8×13), not pink/red.</p>
+ const voiceState=!active?'Start the camera to connect voice.':!ready?'Connecting to voice…':!status.enabled?'Enable voice for spoken guidance.':status.muted?'Voice is muted.':!status.audio_ready?'Connect your configured headphones.':status.state==='SPEAKING'?'Coach is speaking…':status.state==='LISTENING'?'Listening… release to send.':['THINKING','TRANSCRIBING'].includes(status.state)?'Preparing your reply…':'Ready to coach.';
+ return <section className="coach-voice" aria-label="Live voice controls">
+  <div className="coach-voice-heading"><h3>Voice coach</h3><span role="img" aria-label={status.heart_ready?'Browser heart: audio ready':'Browser heart: audio not ready'} style={{color:status.heart_ready?'#ec4899':'#9b625b'}}>♥</span></div>
+  <p className="coach-voice-status" role="status">{voiceState}</p>
   {status.led_error&&<p role="alert" className="error">Hardware indicator: {status.led_error} Check the optional LED backend and board connection; camera capture remains available.</p>}
   {status.asr_error&&<p role="alert" className="error">Speech recognition: {status.asr_error} Check the configured ASR runtime on the Python worker host, or use a typed question. Camera capture is unchanged.</p>}
-  <label><input type="checkbox" checked={status.enabled} disabled={!ready||working} onChange={e=>void control({action:'enable',value:e.target.checked})}/> Enable voice</label>
+  <div className="coach-voice-actions"><label className="coach-voice-toggle"><input type="checkbox" checked={status.enabled} disabled={!ready||working} onChange={e=>void control({action:'enable',value:e.target.checked})}/> Enable voice</label>
   <button type="button" disabled={!ready||working} onClick={()=>void control({action:'mute',value:!status.muted})}>{status.muted?'Unmute':'Mute'}</button>
-  <button type="button" disabled={!ready} onClick={()=>void control({action:'cancel'})}>Cancel speech</button>
-  <button type="button" disabled={!canTalk&&!recording} style={{touchAction:'none'}} aria-pressed={recording}
+  <button type="button" disabled={!ready} onClick={()=>void control({action:'cancel'})}>Cancel speech</button></div>
+  <button className="coach-voice-talk" type="button" disabled={!canTalk&&!recording} style={{touchAction:'none'}} aria-pressed={recording}
    onPointerDown={e=>{if(e.button!==0)return;e.currentTarget.setPointerCapture(e.pointerId);void start();}}
    onPointerUp={()=>void release()} onPointerCancel={()=>abort()} onLostPointerCapture={()=>{if(held.current)abort();}}
    onKeyDown={e=>{if((e.key===' '||e.key==='Enter')&&!e.repeat){e.preventDefault();void start();}}}
    onKeyUp={e=>{if(e.key===' '||e.key==='Enter'){e.preventDefault();void release();}}} onBlur={()=>abort()}>
    {recording?`Release to send · ${RECORD_SECONDS} seconds maximum`:`Hold to talk · ${RECORD_SECONDS} seconds maximum`}
   </button>
-  <form onSubmit={e=>{e.preventDefault();if(question.trim())void control({action:'question',text:question});}}>
-   <label className="field">Ask the coach<input value={question} maxLength={500} disabled={!canTalk} onChange={e=>setQuestion(e.target.value)}/></label>
+  <form className="coach-voice-question" onSubmit={e=>{e.preventDefault();if(question.trim())void control({action:'question',text:question});}}>
+   <label className="field">Ask the coach<input placeholder="What should I focus on?" value={question} maxLength={500} disabled={!canTalk} onChange={e=>setQuestion(e.target.value)}/></label>
    <button type="submit" disabled={!canTalk||!question.trim()}>Send question</button>
   </form>
   {status.observation_text&&<p role="status"><strong>Live observation:</strong> {status.observation_text}</p>}
   {status.transcript&&<p><strong>You:</strong> {status.transcript}</p>}
   {status.response&&<p><strong>Coach:</strong> {status.response}</p>}
-  {(error||status.error)&&<p role="alert" className="error">{error||status.error}</p>}
- </div>;
+  {(error||(active&&status.error))&&<p role="alert" className="error">{error||status.error}</p>}
+  <details className="coach-voice-details"><summary>Voice setup & diagnostics</summary>
+   <p>Playback uses your configured headphones on the worker or the connected Ventuno audio service. Hold to talk for up to {RECORD_SECONDS} seconds, then release. Wait for speech to finish before talking.</p>
+   <p>{status.paired?'Paired':'Not paired'} · {status.connected?'Connected':'Disconnected'} · {status.audio_ready?'Audio ready':'Audio not ready'}{status.host?` · Worker: ${status.host}`:''}</p>
+   <p>The heart shows audio readiness in this browser. Indicator: {status.led_capability||'browser'}. The optional board matrix is blue monochrome.</p>
+  </details>
+ </section>;
 }

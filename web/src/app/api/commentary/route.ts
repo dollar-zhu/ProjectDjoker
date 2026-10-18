@@ -17,13 +17,12 @@ export async function POST(req:Request){
    if(Object.keys(e).length!==1||typeof e.jobId!=='string'||!validId(e.jobId))return Response.json({error:'Invalid job id.'},{status:400});
    let job;try{job=await loadJob(e.jobId);}catch{return Response.json({error:'Serve not found.'},{status:404});}
    if(job.status!=='complete')return Response.json({error:'Wait for pose analysis to finish.'},{status:409});
-   const path=join(jobDir(e.jobId),'result.json');const result=JSON.parse(await readFile(path,'utf8'));
-   if(!result.stages)return Response.json({error:'This older recording needs movement-stage analysis.'},{status:409});
+   const path=join(jobDir(e.jobId),'result.json');JSON.parse(await readFile(path,'utf8'));
    args.push(path);
   }else if(!['Novak Djokovic','Jannik Sinner'].includes(e.player)||!['time','userLeft','userRight','referenceLeft','referenceRight'].every(k=>typeof e[k]==='number'&&Number.isFinite(e[k])&&e[k]>=0&&e[k]<=180)||e.time<=0||e.time>=20)return Response.json({error:'Invalid comparison evidence.'},{status:400});
   const output=await new Promise<string>((resolve,reject)=>{
    const child=spawn(/* turbopackIgnore: true */ PYTHON,args,{stdio:['pipe','pipe','pipe']});
-   let out='',err='';const timer=setTimeout(()=>{child.kill();reject(Error('Commentary timed out'));},80000);
+   let out='',err='';const timer=setTimeout(()=>{child.kill();reject(Error('Commentary timed out'));},140000);
    child.stdout.on('data',d=>{out+=d;if(out.length>1024*1024)child.kill();});child.stderr.on('data',d=>{err=(err+d).slice(-2000);});
    child.on('error',e=>{clearTimeout(timer);reject(e);});child.on('close',code=>{clearTimeout(timer);code===0?resolve(out):reject(Error(err||'Commentary failed'));});child.stdin.on('error',()=>{});child.stdin.end(JSON.stringify(e));
   });

@@ -8,8 +8,8 @@ Controllers start disabled unless conversation.enabled is explicitly true.
 Ingest remains available while disabled; an enable command activates speech.
 Audio voice/WAV and local ASR paths resolve relative to the JSON config.
 An unset Bluetooth address disables speaking; there is no host-default route.
-Playback uses the worker host's selected audio route: an ADB board camera does
-not imply remote board audio. Attach/select Bluetooth on the worker host.
+Playback uses the worker host by default. audio.remote_url selects the
+loopback-forwarded Ventuno Piper service for a Mac camera worker.
 """
 from collections import deque
 import json
@@ -474,6 +474,10 @@ class LiveConversation:
         address = (self.config.get('audio') or {}).get('bluetooth_address')
         if not address:
             raise RuntimeError('Select a Bluetooth address; live speaking is disabled without a selected route')
+        remote = (self.config.get('audio') or {}).get('remote_url')
+        if remote:
+            from .remote_audio import RemoteRoute
+            return RemoteRoute(remote, address)
         return BluetoothRoute(address)
 
     def _choose(self, kind, question):
@@ -583,8 +587,12 @@ class LiveConversation:
                 from .audio import Speaker
                 cfg = self.config.get('audio') or {}
                 route = self._selected_route()
-                speaker = Speaker(cfg.get('backend', 'print'), voice=cfg.get('voice'),
-                                  wav_dir=cfg.get('wav_dir', 'audio'), route=route)
+                if cfg.get('remote_url'):
+                    from .remote_audio import RemoteSpeaker
+                    speaker = RemoteSpeaker(route)
+                else:
+                    speaker = Speaker(cfg.get('backend', 'print'), voice=cfg.get('voice'),
+                                      wav_dir=cfg.get('wav_dir', 'audio'), route=route)
                 with self._lock:
                     self._speaker = speaker
             while not self._stop.is_set():
