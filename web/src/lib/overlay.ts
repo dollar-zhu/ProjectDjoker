@@ -1,7 +1,8 @@
 import {projectPose,kneeAngle} from './reference';
+import type {MotionAlignment} from './motion-similarity';
 export type PoseFrame={time:number;xy:number[][];scores:number[]};
 export type Fit={yaw:0;mirror:false;scale:number;error:number};
-export type ReferenceOverlay={poses:number[][][];fit:Fit;player:string};
+export type ReferenceOverlay={poses:number[][][];fit:Fit;player:string;alignment:MotionAlignment;partial:boolean};
 export const REFERENCE_BONES=[[0,1],[1,2],[2,3],[0,4],[4,5],[5,6],[0,7],[7,8],[8,9],[9,10],[8,11],[11,12],[12,13],[8,14],[14,15],[15,16]];
 const midpoint=(a:number[],b:number[])=>[(a[0]+b[0])/2,(a[1]+b[1])/2];
 const distance=(a:number[],b:number[])=>Math.hypot(a[0]-b[0],a[1]-b[1]);
