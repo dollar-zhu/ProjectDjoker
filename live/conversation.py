@@ -29,7 +29,7 @@ from .asr import EnglishASR, MAX_WAV_BYTES
 SENTENCES = {
     'missing': "I can't see your whole body clearly. Step back until your head, hands and feet are in view.",
     'prepare': 'Your whole body is visible. Stay still and prepare when you are ready.',
-    'limits': 'I can help with whole-body framing here. Live technique comparison is not available.',
+    'limits': 'I have no current approved observation for that question. I can help with framing, not diagnose technique.',
 }
 PERSONA_SUFFIX = 'Djokovic can wait; one calm rep.'
 
@@ -61,6 +61,11 @@ class LiveConversation:
         self._error = None
         self._transcript = self._response = ''
         self._listening = self._speaking = self._thinking = False
+        self._transcribing = False
+        self._dialogue_token = None
+        self._turn_source = None
+        self._turn_asr_done = self._turn_phrase_done = None
+        self._turn_selection_done = None
         self._ptt_armed = False
         self._listen_deadline = 0.0
         self._frame = None
@@ -98,6 +103,11 @@ class LiveConversation:
             config = json.loads(config_path.read_text())
             if not isinstance(config, dict):
                 raise ValueError('Audio configuration must be a JSON object')
+            asr_config = config.get('asr') or {}
+            if asr_config:
+                asr_config['allow_download'] = False
+                if not asr_config.get('model') and not asr_config.get('model_path'):
+                    asr_config['model_path'] = '../models/faster-whisper-tiny.en'
             for section, key in (('audio', 'voice'), ('audio', 'wav_dir'),
                                  ('asr', 'model_path'), ('asr', 'model')):
                 values = config.get(section) or {}
@@ -107,9 +117,6 @@ class LiveConversation:
                 if not isinstance(value, str):
                     raise ValueError(f'{section}.{key} must be a path string')
                 expanded = os.path.expandvars(os.path.expanduser(value))
-                if section == 'asr' and key == 'model' and not (
-                        '/' in expanded or expanded.startswith(('.', '~'))):
-                    continue  # Explicit model names remain available for opt-in transcription.
                 target = Path(expanded)
                 values[key] = str((target if target.is_absolute() else config_path.parent / target).resolve())
             return cls(session_id, reference_id, config)
@@ -139,10 +146,14 @@ class LiveConversation:
                 pass
             self._counts['dropped'] += 1
 
-    def _invalidate(self):
+    def _invalidate(self, preserve_dialogue=False):
+        if preserve_dialogue and self._dialogue_token == self._generation and not self._speaking:
+            return
         self._generation += 1
         self._counts['invalidated'] += 1
         self._thinking = False
+        self._transcribing = False
+        self._dialogue_token = None
         self._response = ''
         for slot in (self._phrase_q, self._speech_q, self._asr_q):
             try:
@@ -183,7 +194,7 @@ class LiveConversation:
                     self._counts['dropped'] += 1
                     return False
                 if not 0 <= started - stamp <= self._number('max_frame_age_s', 1.0, .1, 5):
-                    self._invalidate()
+                    self._invalidate(preserve_dialogue=True)
                     self._frame = None
                     self._candidate = None
                     self._counts['dropped'] += 1
@@ -212,26 +223,28 @@ class LiveConversation:
                     if len(distances) >= 4:
                         inferred_motion = max(distances) / max(dt, .001) > self._number(
                             'motion_speed', .35, .05, 3)
-                unsafe = bool(moving or inferred_motion or overhead or not finite)
+                motion = bool(moving or inferred_motion or overhead)
+                unsafe = bool(motion or not finite)
                 kind = None if unsafe else ('prepare' if visible else 'missing')
                 discontinuity = previous and (
                     stamp - previous['captured_at'] > self._number('max_frame_gap_s', .5, .05, 2)
                     or str(view) != previous['view'])
                 if kind != self._candidate or discontinuity:
-                    self._invalidate()
+                    self._invalidate(preserve_dialogue=(kind is not None or not finite and not motion)
+                                     and not discontinuity)
                     self._candidate, self._candidate_since = kind, stamp
                     self._candidate_samples = 0
                 self._candidate_samples += 1
                 self._frame = {
                     'frame_id': frame_id, 'captured_at': stamp, 'points': points,
                     'confidence': confidence,
-                    'visible': visible, 'unsafe': unsafe, 'view': str(view),
+                    'visible': visible, 'unsafe': unsafe, 'motion': motion, 'view': str(view),
                 }
                 self._counts['ingested'] += 1
                 self._time('ingest_ms', started)
                 return True
             except (ValueError, TypeError, IndexError, KeyError, OverflowError):
-                self._invalidate()
+                self._invalidate(preserve_dialogue=True)
                 self._frame = None
                 self._candidate = None
                 self._error = 'Invalid pose frame'
@@ -241,11 +254,13 @@ class LiveConversation:
         return self._frame is not None and 0 <= time.monotonic() - self._frame['captured_at'] <= (
             self._number('max_frame_age_s', 1.0, .1, 5))
 
-    def _allowed(self, token, greeting=False):
+    def _allowed(self, token, greeting=False, dialogue=False):
         if (self._closed or not self.enabled or self.muted or self._listening or self._ptt_armed
                 or not self._audio_ready or token != self._generation):
             return False
-        if greeting and not self._has_frame:
+        if (greeting or dialogue) and not self._fresh():
+            return True
+        if (greeting or dialogue) and self._candidate is None and not self._frame.get('motion', True):
             return True
         return self._fresh() and not self._frame['unsafe'] and self._candidate is not None
 
@@ -288,9 +303,15 @@ class LiveConversation:
                 self._listening = False
             elif action == 'question':
                 text = command.get('text', '')
-                if not isinstance(text, str) or not text.strip() or not self._allowed(self._generation):
+                if not isinstance(text, str) or not text.strip() or not self._allowed(self._generation, dialogue=True):
                     return False
                 self._invalidate()
+                self._dialogue_token = self._generation
+                self._turn_source = 'text'
+                self._turn_asr_done = self._turn_phrase_done = None
+                self._turn_selection_done = None
+                if not self._fresh():
+                    self._candidate = None
                 self._transcript = text[:500].strip()
                 self._enqueue_phrase('limits', self._transcript)
             else:
@@ -313,7 +334,14 @@ class LiveConversation:
                 return False
             self._listening = self._ptt_armed = False
             self._invalidate()
+            self._dialogue_token = self._generation
+            self._turn_source = 'wav'
+            self._turn_asr_done = self._turn_phrase_done = None
+            self._turn_selection_done = None
+            if not self._fresh():
+                self._candidate = None
             self._thinking = True
+            self._transcribing = True
             self._put(self._asr_q, (self._generation, data, time.monotonic()))
             return True
 
@@ -324,9 +352,10 @@ class LiveConversation:
             return True
         return False
 
-    def _enqueue_phrase(self, kind, question=''):
+    def _enqueue_phrase(self, kind, question='', started=None):
         self._thinking = True
-        self._put(self._phrase_q, (self._generation, kind, question, time.monotonic()))
+        self._put(self._phrase_q, (self._generation, kind, question,
+                                  time.monotonic() if started is None else started))
 
     def _control_worker(self):
         while not self._stop.wait(.04):
@@ -337,12 +366,13 @@ class LiveConversation:
                     self._invalidate()
                 if self._frame and not self._fresh() and self._candidate is not None:
                     self._candidate = None
-                    self._invalidate()
+                    self._invalidate(preserve_dialogue=True)
                 if (self._greeting_pending and not self._speaking and not self._thinking
                         and self._speech_q.empty() and self._allowed(self._generation, greeting=True)):
                     self._greeting_pending = False
                     self._put(self._speech_q, (self._generation, 'lets rock and roll', 'GREETING', now))
                 if (not self._allowed(self._generation) or self._speaking or self._thinking
+                        or self._dialogue_token == self._generation
                         or self._waiting_for_greeting or self._greeting_due):
                     continue
                 if (self._sustained()
@@ -447,7 +477,7 @@ class LiveConversation:
             return kind
         approved = {'limits': SENTENCES['limits']}
         with self._lock:
-            if self._candidate and self._sustained():
+            if self._fresh() and self._candidate and self._sustained():
                 approved[self._candidate] = SENTENCES[self._candidate]
         body = {
             'model': cfg.get('model', 'qwen'), 'temperature': 0, 'max_tokens': 24,
@@ -475,16 +505,31 @@ class LiveConversation:
                 token, kind, question, started = self._phrase_q.get(timeout=.1)
             except queue.Empty:
                 continue
+            phrase_started = time.monotonic()
+            queued = False
             try:
                 with self._lock:
-                    if not self._allowed(token):
+                    if not self._allowed(token, dialogue=bool(question)):
                         continue
+                selection_started = time.monotonic()
                 try:
                     kind = self._choose(kind, question)
                 except Exception as exc:
                     kind = 'limits' if question else kind
                     with self._lock:
                         self._error = f'Dialogue fallback: {type(exc).__name__}'
+                finally:
+                    if question and (self.config.get('phraser') or {}).get('backend') == 'qwen':
+                        with self._lock:
+                            self._time('llm_selection_ms', selection_started)
+                            if token == self._generation:
+                                self._turn_selection_done = time.monotonic()
+                                if self._turn_asr_done is not None:
+                                    self._time('asr_to_llm_selection_ms', self._turn_asr_done)
+                with self._lock:
+                    if question and (not (self._fresh() and self._candidate and self._sustained())
+                                     or kind in ('prepare', 'missing') and kind != self._candidate):
+                        kind = 'limits'
                 canonical = SENTENCES[kind]
                 feedback = {
                     'canonical_text': canonical, 'suggestion': None,
@@ -500,9 +545,15 @@ class LiveConversation:
                 if self.options.get('persona') in (True, 'djokovic', PERSONA_SUFFIX):
                     text += ' ' + PERSONA_SUFFIX
                 with self._lock:
-                    self._time('dialogue_ms', started)
-                    if self._allowed(token):
-                        self._put(self._speech_q, (token, text, kind.upper(), started))
+                    self._time('dialogue_ms', phrase_started)
+                    if question and token == self._generation:
+                        if self._turn_asr_done is not None:
+                            self._time('asr_to_dialogue_complete_ms', self._turn_asr_done)
+                        self._turn_phrase_done = time.monotonic()
+                    if self._allowed(token, dialogue=bool(question)):
+                        code = ('DIALOGUE_' if question else '') + kind.upper()
+                        self._put(self._speech_q, (token, text, code, started))
+                        queued = True
             except Exception as exc:
                 with self._lock:
                     self._error = f'Phrasing unavailable: {exc}'[:240]
@@ -510,6 +561,8 @@ class LiveConversation:
                 with self._lock:
                     if token == self._generation:
                         self._thinking = False
+                        if question and not queued:
+                            self._dialogue_token = None
 
     def _audio_worker(self):
         try:
@@ -541,16 +594,33 @@ class LiveConversation:
                             break
                     self._stop.wait(.01)
                 with self._lock:
-                    if not self._allowed(token, greeting=code == 'GREETING'):
+                    if not self._allowed(token, greeting=code == 'GREETING',
+                                         dialogue=code.startswith('DIALOGUE_')):
                         continue
                     self._speaking = True
                     reserve = getattr(self._speaker, 'cancellation_token', None)
                     speech_token = reserve() if callable(reserve) else None
                     self._response = text
                     self._time('playback_request_ms', started)
+                    if code.startswith('DIALOGUE_'):
+                        if (not (self._fresh() and self._candidate and self._sustained())
+                                or code in ('DIALOGUE_PREPARE', 'DIALOGUE_MISSING')
+                                and code != 'DIALOGUE_' + self._candidate.upper()):
+                            text = SENTENCES['limits']
+                            if self.options.get('persona') in (True, 'djokovic', PERSONA_SUFFIX):
+                                text += ' ' + PERSONA_SUFFIX
+                            code = 'DIALOGUE_LIMITS'
+                            self._response = text
+                        if self._turn_phrase_done is not None:
+                            self._time('dialogue_to_playback_request_ms', self._turn_phrase_done)
+                        if self._turn_selection_done is not None:
+                            self._time('llm_to_playback_request_ms', self._turn_selection_done)
+                        if self._turn_source == 'wav':
+                            self._time('speech_end_proxy_to_playback_request_ms', started)
                     if self._frame:
                         self._time('latest_frame_age_at_playback_request_ms', self._frame['captured_at'])
                 playback_started = time.monotonic()
+                completed = False
                 try:
                     if callable(reserve):
                         result = self._speaker.speak(text, code=code, cancellation_token=speech_token)
@@ -559,6 +629,7 @@ class LiveConversation:
                     with self._lock:
                         if token == self._generation:
                             if getattr(result, 'ok', True):
+                                completed = True
                                 self._counts['spoken'] += 1
                                 self._last_spoken = time.monotonic()
                                 if code == 'GREETING':
@@ -572,6 +643,12 @@ class LiveConversation:
                 finally:
                     with self._lock:
                         self._time('speech_call_ms', playback_started)
+                        if code.startswith('DIALOGUE_') and token == self._generation:
+                            if completed:
+                                self._time('turn_complete_ms', started)
+                                if self._turn_source == 'wav':
+                                    self._time('turn_complete_from_upload_ms', started)
+                            self._dialogue_token = None
                         self._speaking = False
         except Exception as exc:
             with self._lock:
@@ -609,24 +686,34 @@ class LiveConversation:
                 token, data, started = self._asr_q.get(timeout=.1)
             except queue.Empty:
                 continue
+            queued = False
+            asr_started = time.monotonic()
             try:
                 with self._lock:
-                    if not self._allowed(token) or self._speaking:
+                    if not self._allowed(token, dialogue=True) or self._speaking:
                         continue
                 text = self._asr.transcribe(data)
                 with self._lock:
                     self._time('asr_ms', started)
-                    if self._allowed(token) and text:
+                    self._time('asr_processing_ms', asr_started)
+                    if self._allowed(token, dialogue=True) and text:
+                        self._time('speech_end_proxy_to_asr_ms', started)
+                        self._turn_asr_done = time.monotonic()
+                        self._transcribing = False
                         self._transcript = text[:500]
-                        self._enqueue_phrase('limits', self._transcript)
+                        self._enqueue_phrase('limits', self._transcript, started)
+                        queued = True
             except Exception as exc:
                 with self._lock:
                     if token == self._generation:
                         self._error = f'ASR unavailable: {exc}'[:240]
             finally:
                 with self._lock:
-                    if token == self._generation and self._phrase_q.empty():
+                    if token == self._generation:
+                        self._transcribing = False
+                    if token == self._generation and not queued:
                         self._thinking = False
+                        self._dialogue_token = None
 
     def snapshot(self):
         with self._lock:
@@ -640,6 +727,8 @@ class LiveConversation:
                 state = 'SPEAKING'
             elif self._listening:
                 state = 'LISTENING'
+            elif self._transcribing:
+                state = 'TRANSCRIBING'
             elif self._thinking:
                 state = 'THINKING'
             elif not self._audio_ready:
@@ -653,6 +742,17 @@ class LiveConversation:
                     'count': len(values), 'p50': values[int((len(values) - 1) * .5)],
                     'p95': values[math.ceil((len(values) - 1) * .95)],
                 }
+            if self._frame is None:
+                observation_status = 'no_current_observation'
+            elif not self._fresh():
+                observation_status = 'stale'
+            elif self._candidate is None:
+                observation_status = 'suppressed_motion_or_uncertain'
+            elif not self._sustained():
+                observation_status = 'sustaining'
+            else:
+                observation_status = 'current'
+            observation = self._candidate if observation_status == 'current' else None
             return {
                 'state': state, 'enabled': self.enabled, 'muted': self.muted,
                 'configured': bool(self.config),
@@ -663,16 +763,18 @@ class LiveConversation:
                 'led_error': self._led_error, 'led_capability': self._led_capability,
                 'audio_ready': self._audio_ready,
                 'heart': getattr(self._gate, 'heart', {
-                    'ready': self._audio_ready, 'color': 'green' if self._audio_ready else 'red'}),
+                    'ready': self._audio_ready, 'color': 'pink' if self._audio_ready else 'red'}),
                 'transcript': self._transcript, 'response': self._response, 'error': self._error,
                 'session_id': self.session_id, 'reference_id': self.reference_id,
                 'generation': self._generation, 'frame_id': self._frame and self._frame['frame_id'],
                 'greeting_spoken': self._greeting_sent,
-                'observation': self._candidate if self._fresh() else None,
+                'observation': observation, 'observation_status': observation_status,
+                'observation_message': SENTENCES[observation] if observation else 'No current observation is available.',
                 'observation_text': (SENTENCES.get(self._candidate)
                                      if self._fresh() and self._sustained() else None),
                 'route': dict(self._route_status), 'asr': self._asr.snapshot(),
                 'metrics': {**self._counts, 'timings': timings,
+                            'turn_timing': 'speech-end proxy is server WAV receipt; completion is Speaker return, not measured audible onset',
                             'playback_timing': 'request proxy only; not measured audible onset'},
             }
 

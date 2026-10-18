@@ -216,6 +216,9 @@ Input is gated during TTS; mute/cancel remain independent. Browser streams/track
 are released after each utterance. WAV bytes cross a bounded local Unix socket,
 not a recording file; transcripts/status are local ephemeral UI state. Do not
 expose this unauthenticated local application to an untrusted network.
+Cancellation invalidates queued/in-flight results and terminates playback
+subprocesses. It does not forcibly interrupt a native Piper/CTranslate2 inference
+already running; that worker discards its result when it returns.
 
 ### Optional physical indication — manual deployment only
 
@@ -253,6 +256,9 @@ Measure actual output with an independently recorded loopback/acoustic signal
 on the board. Capture timestamps are host receive timestamps after camera
 transport, not sensor exposure times. Record frame/context age,
 cue-to-playback-request, speech-end→ASR→dialogue→speech request and turn completion.
+The implemented voice-turn origin is **server receipt of the PTT upload**, not
+the microphone's physical speech end (`turn_complete_from_upload_ms`). Include
+browser capture/upload delay separately when measuring end-to-end speech turns.
 No latency budget or real-time performance guarantee has been established.
 
 Still pending on hardware: onboard BlueZ pairing/reconnect/profile changes,

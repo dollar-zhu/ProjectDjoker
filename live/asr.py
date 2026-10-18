@@ -2,8 +2,8 @@
 
 ``python -m live.asr known.wav --model /path/to/faster-whisper-model``
 requires an independently installed faster-whisper runtime (optional version
-1.2.1). Model names may
-download weights; use an external local path for an entirely offline runtime.
+1.2.1). The default is a local model directory. An explicit CLI model name may download
+weights; configured live ASR only accepts local model directories.
 """
 import argparse
 import importlib.util
@@ -20,6 +20,7 @@ import numpy as np
 MAX_SECONDS = 10
 SAMPLE_RATE = 16000
 MAX_WAV_BYTES = SAMPLE_RATE * 2 * MAX_SECONDS + 4096
+DEFAULT_MODEL_PATH = 'models/faster-whisper-tiny.en'
 
 
 def decode_wav(data):
@@ -46,8 +47,8 @@ class EnglishASR:
     """One persistent model, initialized only inside transcribe's worker thread.
 
     ``model_path`` is an external local directory (``~`` is expanded), never a
-    download ID. ``model`` also accepts directories, or an explicit model name
-    that faster-whisper may download only when transcription is requested.
+    download ID. ``model`` also accepts directories. Named downloads require
+    explicit ``allow_download``; the known-WAV CLI opts in for explicit names.
     """
 
     def __init__(self, config=None):
@@ -79,10 +80,11 @@ class EnglishASR:
             return dict(self._status)
 
     def _model_source(self):
-        raw = str(self.config.get('model_path') or self.config.get('model', 'tiny.en'))
+        raw = str(self.config.get('model_path') or self.config.get('model', DEFAULT_MODEL_PATH))
         expanded = os.path.expandvars(os.path.expanduser(raw))
         path = Path(expanded)
-        if (self.config.get('model_path') or raw.startswith(('/', '.', '~'))
+        if (not self.config.get('allow_download', False) or self.config.get('model_path')
+                or '/' in expanded or raw.startswith(('/', '.', '~'))
                 or path.exists()):
             if not path.is_dir():
                 raise FileNotFoundError(f'ASR model directory does not exist: {expanded}')
@@ -124,9 +126,10 @@ class EnglishASR:
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('wav')
-    parser.add_argument('--model', default='tiny.en', help='Model name or external local model directory')
+    parser.add_argument('--model', default=DEFAULT_MODEL_PATH,
+                        help='Local model directory (default), or explicit model name (may download)')
     args = parser.parse_args(argv)
-    asr = EnglishASR({'enabled': True, 'model': args.model})
+    asr = EnglishASR({'enabled': True, 'model': args.model, 'allow_download': True})
     try:
         with open(args.wav, 'rb') as handle:
             data = handle.read(MAX_WAV_BYTES + 1)

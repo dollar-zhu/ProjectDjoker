@@ -12,6 +12,7 @@ from unittest import mock
 
 import numpy as np
 
+from coaching.board_feedback import validate
 from live.asr import EnglishASR, MAX_WAV_BYTES, decode_wav, main
 from live.conversation import LiveConversation, PERSONA_SUFFIX, SENTENCES
 
@@ -322,7 +323,7 @@ class ConversationTests(unittest.TestCase):
         self.assertTrue(controller.command({'action': 'stop_listening'}))
         self.assertTrue(controller.submit_wav(wav_bytes()))
         wait_for(lambda: controller.snapshot()['transcript'] == 'What can you see?')
-        wait_for(lambda: (SENTENCES['limits'], 'LIMITS') in self.speaker.said)
+        wait_for(lambda: (SENTENCES['limits'], 'DIALOGUE_LIMITS') in self.speaker.said)
         self.assertEqual(len(self.asr.calls), 1)
 
     def test_asr_result_discarded_after_cancel(self):
@@ -410,6 +411,17 @@ class ConversationTests(unittest.TestCase):
         self.assertEqual(resolved['audio']['voice'], str(Path.cwd() / 'models/voice.onnx'))
         self.assertEqual(resolved['audio']['wav_dir'], str(Path.cwd() / 'audio'))
         self.assertEqual(resolved['asr']['model'], str(Path.cwd() / 'models/faster-whisper-tiny.en'))
+        self.assertFalse(resolved['asr']['allow_download'])
+
+    def test_live_environment_forces_named_model_to_local_directory(self):
+        with mock.patch('live.conversation.Path.read_text', return_value=json.dumps({
+                'asr': {'model': 'tiny.en', 'allow_download': True}})), \
+                mock.patch.dict('os.environ', {'DJOKER_AUDIO_CONFIG': 'config/operator-audio.json'}), \
+                mock.patch.object(LiveConversation, '__init__', autospec=True, return_value=None) as init:
+            LiveConversation.from_environment('local-only')
+        resolved = init.call_args.args[3]['asr']
+        self.assertEqual(resolved['model'], str(Path.cwd() / 'config/tiny.en'))
+        self.assertFalse(resolved['allow_download'])
 
     def test_null_bluetooth_address_never_constructs_default_host_speaker(self):
         from live import audio, bluetooth
@@ -465,12 +477,15 @@ class ConversationTests(unittest.TestCase):
         }).encode()
         with mock.patch('live.conversation.urllib.request.urlopen', return_value=response) as endpoint:
             self.assertTrue(controller.command({'action': 'question', 'text': injected}))
-            wait_for(lambda: (SENTENCES['limits'], 'LIMITS') in self.speaker.said)
+            wait_for(lambda: (SENTENCES['limits'], 'DIALOGUE_LIMITS') in self.speaker.said)
         request = endpoint.call_args.args[0]
         payload = json.loads(request.data)
         self.assertNotIn(injected, payload['messages'][0]['content'])
         self.assertEqual(json.loads(payload['messages'][1]['content'])['question'], injected)
         self.assertEqual(controller.snapshot()['response'], SENTENCES['limits'])
+        timings = controller.snapshot()['metrics']['timings']
+        self.assertEqual(timings['llm_selection_ms']['count'], 1)
+        self.assertEqual(timings['llm_to_playback_request_ms']['count'], 1)
 
     def test_metrics_are_bounded_and_honest_request_proxy(self):
         controller = self.controller()
@@ -481,6 +496,17 @@ class ConversationTests(unittest.TestCase):
         self.assertGreaterEqual(metrics['timings']['ingest_ms']['p95'], metrics['timings']['ingest_ms']['p50'])
         self.assertIn('not measured audible onset', metrics['playback_timing'])
         json.dumps(controller.snapshot())
+
+    def test_no_current_observation_is_explicit_before_evidence_and_after_expiry(self):
+        controller = self.controller()
+        self.assertEqual(controller.snapshot()['observation_status'], 'no_current_observation')
+        self.assertIn('No current observation', controller.snapshot()['observation_message'])
+        self.sustain(controller)
+        self.assertEqual(controller.snapshot()['observation_status'], 'current')
+        time.sleep(.55)
+        self.assertEqual(controller.snapshot()['observation_status'], 'stale')
+        self.assertIsNone(controller.snapshot()['observation'])
+        self.assertIn('No current observation', controller.snapshot()['observation_message'])
 
     def test_close_is_nonblocking_and_idempotent(self):
         controller = self.controller()
@@ -539,6 +565,7 @@ class ConversationTests(unittest.TestCase):
         self.assertTrue(status['paired'])
         self.assertTrue(status['connected'])
         self.assertFalse(status['listening'])
+        self.assertEqual(status['heart'], {'ready': True, 'color': 'pink'})
         self.assertFalse(controller.command({'action': 'mute', 'session': 'old'}))
         self.assertFalse(controller.command({'action': 'mute', 'session_id': 'old'}))
         self.assertFalse(controller.command({'action': 'mute', 'pid': os.getpid() + 1}))
@@ -562,6 +589,106 @@ class ConversationTests(unittest.TestCase):
         self.assertEqual(self.speaker.said, [])
         self.assertTrue(controller.command({'action': 'enable', 'value': True}))
         wait_for(lambda: controller.snapshot()['greeting_spoken'])
+
+
+    def test_question_without_pose_explicitly_abstains(self):
+        controller = self.controller()
+        self.assertTrue(controller.command({'action': 'question', 'text': 'What can you see?'}))
+        wait_for(lambda: (SENTENCES['limits'], 'DIALOGUE_LIMITS') in self.speaker.said)
+        self.assertIn('no current approved observation', controller.snapshot()['response'])
+
+    def test_question_with_fresh_unobserved_joints_explicitly_abstains(self):
+        controller = self.controller()
+        controller.ingest(1, time.monotonic(), np.full((17, 2), np.nan),
+                          np.zeros(17), 640, 480, 'rear')
+        self.assertTrue(controller.command({'action': 'question', 'text': 'What can you see?'}))
+        wait_for(lambda: (SENTENCES['limits'], 'DIALOGUE_LIMITS') in self.speaker.said)
+        self.assertIn('no current approved observation', controller.snapshot()['response'])
+
+    def test_ptt_without_pose_reports_transcribing_and_turn_metrics(self):
+        controller = self.controller()
+        self.asr.block = True
+        self.assertTrue(controller.command({'action': 'listen'}))
+        self.assertTrue(controller.submit_wav(wav_bytes()))
+        self.assertTrue(self.asr.started.wait(1))
+        self.assertEqual(controller.snapshot()['state'], 'TRANSCRIBING')
+        self.asr.release.set()
+        wait_for(lambda: (SENTENCES['limits'], 'DIALOGUE_LIMITS') in self.speaker.said)
+        wait_for(lambda: 'turn_complete_from_upload_ms' in controller.snapshot()['metrics']['timings'])
+        self.assertIn('not measured audible onset', controller.snapshot()['metrics']['playback_timing'])
+        metrics = controller.snapshot()['metrics']
+        for stage in ('asr_processing_ms', 'speech_end_proxy_to_asr_ms',
+                      'asr_to_dialogue_complete_ms', 'dialogue_to_playback_request_ms',
+                      'speech_end_proxy_to_playback_request_ms', 'turn_complete_ms'):
+            self.assertEqual(metrics['timings'][stage]['count'], 1, stage)
+        self.assertEqual(metrics['timings']['playback_request_ms']['count'], 2)
+        self.assertIn('server WAV receipt', metrics['turn_timing'])
+
+    def test_pose_expiration_does_not_drop_an_inflight_user_utterance(self):
+        controller = self.controller()
+        self.frame(controller)
+        self.asr.block = True
+        self.assertTrue(controller.command({'action': 'listen'}))
+        self.assertTrue(controller.submit_wav(wav_bytes()))
+        self.assertTrue(self.asr.started.wait(1))
+        time.sleep(.55)
+        self.assertEqual(controller.snapshot()['state'], 'TRANSCRIBING')
+        self.asr.release.set()
+        wait_for(lambda: (SENTENCES['limits'], 'DIALOGUE_LIMITS') in self.speaker.said)
+        self.assertEqual(controller.snapshot()['transcript'], 'What can you see?')
+
+    def test_first_pose_does_not_drop_a_no_observation_user_utterance(self):
+        controller = self.controller()
+        self.asr.block = True
+        self.assertTrue(controller.command({'action': 'listen'}))
+        self.assertTrue(controller.submit_wav(wav_bytes()))
+        self.assertTrue(self.asr.started.wait(1))
+        self.frame(controller)
+        self.assertEqual(controller.snapshot()['state'], 'TRANSCRIBING')
+        self.asr.release.set()
+        wait_for(lambda: (SENTENCES['limits'], 'DIALOGUE_LIMITS') in self.speaker.said)
+
+    def test_transcribing_then_thinking_have_distinct_states(self):
+        phraser = BlockingPhraser()
+        controller = self.controller(phraser=phraser)
+        self.asr.block = True
+        self.assertTrue(controller.command({'action': 'listen'}))
+        self.assertTrue(controller.submit_wav(wav_bytes()))
+        self.assertTrue(self.asr.started.wait(1))
+        self.assertEqual(controller.snapshot()['state'], 'TRANSCRIBING')
+        self.asr.release.set()
+        self.assertTrue(phraser.started.wait(1))
+        self.assertEqual(controller.snapshot()['state'], 'THINKING')
+        phraser.release.set()
+        wait_for(lambda: (SENTENCES['limits'], 'DIALOGUE_LIMITS') in self.speaker.said)
+
+    def test_all_approved_live_sentences_pass_canonical_validation(self):
+        for sentence in SENTENCES.values():
+            with self.subTest(sentence=sentence):
+                feedback = {'canonical_text': sentence, 'suggestion': None,
+                            'observation': sentence, 'praise': None, 'max_words': 55,
+                            'allowed_numbers': [], 'rating': None}
+                result = validate(feedback, json.dumps({'speech': sentence}))
+                self.assertTrue(result['accepted'], result['reasons'])
+                self.assertEqual(result['speech'], sentence)
+
+    def test_full_ptt_model_selection_and_playback_stage_metrics(self):
+        controller = self.controller()
+        controller.config['phraser'] = {'backend': 'qwen', 'url': 'http://localhost/test'}
+        response = mock.MagicMock()
+        response.__enter__.return_value.read.return_value = json.dumps({
+            'choices': [{'message': {'content': '{"id":"limits"}'}}]}).encode()
+        with mock.patch('live.conversation.urllib.request.urlopen', return_value=response) as endpoint:
+            self.assertTrue(controller.command({'action': 'listen'}))
+            self.assertTrue(controller.submit_wav(wav_bytes()))
+            wait_for(lambda: 'turn_complete_from_upload_ms' in controller.snapshot()['metrics']['timings'])
+        endpoint.assert_called_once()
+        timings = controller.snapshot()['metrics']['timings']
+        for stage in ('asr_processing_ms', 'speech_end_proxy_to_asr_ms',
+                      'asr_to_llm_selection_ms', 'llm_selection_ms',
+                      'llm_to_playback_request_ms', 'turn_complete_from_upload_ms'):
+            self.assertEqual(timings[stage]['count'], 1, stage)
+        self.assertEqual(controller.snapshot()['response'], SENTENCES['limits'])
 
 
 class ASRTests(unittest.TestCase):
@@ -603,6 +730,15 @@ class ASRTests(unittest.TestCase):
                 asr.transcribe(wav_bytes())
         factory.assert_not_called()
 
+    def test_named_model_is_local_only_by_default(self):
+        factory = mock.Mock()
+        with mock.patch.dict(sys.modules, {'faster_whisper': types.SimpleNamespace(WhisperModel=factory)}), \
+                mock.patch('live.asr.Path.is_dir', return_value=False):
+            asr = EnglishASR({'enabled': True, 'model': 'tiny.en'})
+            with self.assertRaises(FileNotFoundError):
+                asr.transcribe(wav_bytes())
+        factory.assert_not_called()
+
     def test_model_path_expands_operator_home_without_loading_at_startup(self):
         asr = EnglishASR({'enabled': True, 'model_path': '~'})
         self.assertFalse(asr.snapshot()['loaded'])
@@ -635,6 +771,16 @@ class ASRTests(unittest.TestCase):
                 mock.patch('builtins.print') as output:
             self.assertEqual(main(['known.wav', '--model', 'external/model']), 0)
         self.assertEqual(json.loads(output.call_args.args[0])['transcript'], 'hello')
+
+    def test_cli_explicit_model_name_can_opt_into_download(self):
+        model = mock.Mock()
+        model.transcribe.return_value = (iter([types.SimpleNamespace(text='hello')]), None)
+        factory = mock.Mock(return_value=model)
+        with mock.patch.dict(sys.modules, {'faster_whisper': types.SimpleNamespace(WhisperModel=factory)}), \
+                mock.patch('builtins.open', return_value=io.BytesIO(wav_bytes())), \
+                mock.patch('builtins.print'):
+            self.assertEqual(main(['known.wav', '--model', 'tiny.en']), 0)
+        factory.assert_called_once_with('tiny.en', device='cpu', compute_type='int8')
 
 
 if __name__ == '__main__':

@@ -66,7 +66,7 @@ class AudioIPC(unittest.TestCase):
     def test_local_camera_reuses_existing_latest_frame_reader(self):
         stubs = {}
         for module_name, names in {
-            'capture': ['ServeCapture', 'ManualCapture', 'PlayerCrop', 'pose_signal'],
+            'capture': ['ServeCapture', 'ReadyServeCapture', 'ManualCapture', 'PlayerCrop', 'pose_signal', 'ready_pose'],
             'pose': ['crop_input', 'decode'],
             'worker': ['ONNX', 'prepare', 'process', 'update'],
             'audio_bridge': ['AudioBridge'],

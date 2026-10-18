@@ -246,7 +246,7 @@ def run(root, options):
                     frame_id += 1
                     if audio:
                         audio.ingest(frame_id, stamp, observed, scores, 640, 480, options['view'],
-                                     moving=bool(overhead or not lowered))
+                                     moving=bool(present and (overhead or not lowered)))
                     player_crop.update(stamp,xy,present,640,480)
                     auto_event=(detector.update(stamp,present,overhead,lowered) if manual
                                 else detector.update(stamp,present,overhead,lowered,ready,pose=observed))
