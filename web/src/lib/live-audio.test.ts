@@ -36,6 +36,35 @@ test('commands strictly validate booleans, action fields, and 500-character ques
   assert.throws(()=>parseAudioCommand(value));
  }
 });
+test('optional LED and enabled ASR diagnostics remain visible without disabling camera audio status',()=>{
+ const status=validateStatus({...audio,led_capability:'routerbridge',led_error:'Board disconnected',asr:{enabled:true,error:'Optional faster-whisper runtime is not installed'}},camera,100);
+ assert.equal(status.available,true);assert.equal(status.enabled,true);
+ assert.equal(status.led_capability,'routerbridge');assert.equal(status.led_error,'Board disconnected');
+ assert.equal(status.asr_error,'Optional faster-whisper runtime is not installed');
+ for(const asr of [null,{enabled:false,error:'ASR is not configured'},{enabled:true,error:null},{enabled:'true',error:'Invalid configuration'}]){
+  assert.equal(validateStatus({...audio,asr},camera,100).asr_error,undefined);
+ }
+ const bounded=validateStatus({...audio,led_error:'e'.repeat(5000),led_capability:42,asr:{enabled:true,error:'e'.repeat(5000)}},camera,100);
+ assert.equal(bounded.led_error?.length,4000);assert.equal(bounded.asr_error?.length,4000);assert.equal(bounded.led_capability,undefined);
+});
+test('browser heart follows debounced gate but disconnect hides readiness immediately',()=>{
+ assert.equal(validateStatus(audio,camera,100).heart_ready,true,'older snapshots fall back to raw readiness');
+ const settling=validateStatus({...audio,heart:{ready:false,color:'red'}},camera,100);
+ assert.equal(settling.audio_ready,true);assert.equal(settling.heart_ready,false);
+ assert.equal(validateStatus({...audio,heart:{ready:true,color:'pink'}},camera,100).heart_ready,true);
+ assert.equal(validateStatus({...audio,audio_ready:false,heart:{ready:true,color:'pink'}},camera,100).heart_ready,false);
+ assert.equal(validateStatus({...audio,heart:{ready:'true'}},camera,100).heart_ready,false);
+ assert.equal(validateStatus({...audio,updated:80,heart:{ready:true}},camera,100).heart_ready,false);
+});
+test('live observation remains visible without Bluetooth and disappears on absent or stale evidence',()=>{
+ const status=validateStatus({...audio,audio_ready:false,enabled:false,observation_text:'Keep the tossing arm up.'},camera,100);
+ assert.equal(status.audio_ready,false);assert.equal(status.observation_text,'Keep the tossing arm up.');
+ for(const observation_text of [null,undefined,42]){
+  assert.equal(validateStatus({...audio,observation_text},camera,100).observation_text,undefined);
+ }
+ assert.equal(validateStatus({...audio,updated:80,observation_text:'Old observation'},camera,100).observation_text,undefined);
+ assert.equal(validateStatus({...audio,observation_text:'o'.repeat(5000)},camera,100).observation_text?.length,4000);
+});
 test('WAV validation accepts only bounded canonical mono PCM16 at 16kHz',()=>{
  validateWav(wav());
  for(const [offset,value] of [[20,3],[22,2],[24,48000],[28,48000],[34,8],[40,200]]){

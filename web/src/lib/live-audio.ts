@@ -1,11 +1,11 @@
 export const MAX_WAV_BYTES=320044;
 export type AudioStatus={
  available:boolean;enabled:boolean;muted:boolean;listening:boolean;state:string;
- paired:boolean;connected:boolean;audio_ready:boolean;updated:number;pid?:number;session?:string;
- transcript?:string;response?:string;error?:string;host?:string;
+ paired:boolean;connected:boolean;audio_ready:boolean;heart_ready?:boolean;updated:number;pid?:number;session?:string;
+ transcript?:string;response?:string;observation_text?:string;error?:string;host?:string;led_error?:string;led_capability?:string;asr_error?:string;
 };
 export const unavailableAudio=(error='Audio worker is unavailable. Start the camera and check its audio configuration.'):AudioStatus=>({
- available:false,enabled:false,muted:true,listening:false,state:'DISABLED',paired:false,connected:false,audio_ready:false,updated:0,error,
+ available:false,enabled:false,muted:true,listening:false,state:'DISABLED',paired:false,connected:false,audio_ready:false,heart_ready:false,updated:0,error,
 });
 export function validateStatus(audio:unknown,camera:unknown,now=Date.now()/1000,alive:(pid:number)=>boolean=()=>true):AudioStatus{
  if(!audio||typeof audio!=='object'||!camera||typeof camera!=='object')return unavailableAudio();
@@ -20,7 +20,11 @@ export function validateStatus(audio:unknown,camera:unknown,now=Date.now()/1000,
   !alive(a.pid as number))return unavailableAudio('Audio status is stale or the camera session ended. Restart the camera.');
  if(['enabled','muted','listening','paired','connected','audio_ready'].some(k=>typeof a[k]!=='boolean')||typeof a.state!=='string')return unavailableAudio('Invalid audio worker status.');
  const result:AudioStatus={available:true,enabled:a.enabled as boolean,muted:a.muted as boolean,listening:a.listening as boolean,state:a.state,paired:a.paired as boolean,connected:a.connected as boolean,audio_ready:a.audio_ready as boolean,updated:a.updated,pid:a.pid as number,session:a.session};
- for(const key of ['transcript','response','error','host'] as const)if(typeof a[key]==='string')result[key]=(a[key] as string).slice(0,4000);
+ const heart=raw.heart&&typeof raw.heart==='object'?raw.heart as Record<string,unknown>:null;
+ result.heart_ready=result.audio_ready&&(heart===null?true:heart.ready===true);
+ for(const key of ['transcript','response','observation_text','error','host','led_error','led_capability'] as const)if(typeof a[key]==='string')result[key]=(a[key] as string).slice(0,4000);
+ const asr=raw.asr&&typeof raw.asr==='object'?raw.asr as Record<string,unknown>:null;
+ if(asr?.enabled===true&&typeof asr.error==='string')result.asr_error=asr.error.slice(0,4000);
  return result;
 }
 export type AudioCommand={action:'enable'|'mute'|'cancel'|'listen'|'stop_listening'|'question';value?:boolean;text?:string};

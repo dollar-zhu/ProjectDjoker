@@ -129,7 +129,7 @@ class ConversationTests(unittest.TestCase):
 
     def controller(self, options=None, **kwargs):
         cfg = {'audio': {'backend': 'print'},
-               'conversation': {'cooldown_s': 0, 'sustain_s': .05,
+               'conversation': {'enabled': True, 'cooldown_s': 0, 'sustain_s': .05,
                                 'max_frame_age_s': .5, **(options or {})}}
         controller = LiveConversation(
             'test', config=cfg, speaker=self.speaker, route=self.route,
@@ -159,6 +159,9 @@ class ConversationTests(unittest.TestCase):
         self.assertEqual(controller.snapshot()['state'], 'DISABLED')
         self.assertFalse(controller.command({'action': 'enable'}))
         self.assertFalse(controller.submit_wav(wav_bytes()))
+        self.assertTrue(self.frame(controller), 'Missing configuration must not prevent frame ingestion')
+        self.assertEqual(controller.snapshot()['frame_id'], 1)
+        self.assertFalse(controller.snapshot()['configured'])
         json.dumps(controller.snapshot())
         self.assertEqual(controller._threads, [])
 
@@ -334,6 +337,26 @@ class ConversationTests(unittest.TestCase):
         time.sleep(.1)
         self.assertEqual(controller.snapshot()['transcript'], '')
 
+    def test_missing_asr_configuration_is_actionable_on_listen(self):
+        controller = self.controller()
+        controller._asr = EnglishASR()
+        self.assertFalse(controller.command({'action': 'listen'}))
+        self.assertIn('ASR is not configured', controller.snapshot()['error'])
+        self.assertFalse(controller.snapshot()['listening'])
+
+    def test_missing_asr_runtime_is_actionable_on_wav_submission(self):
+        controller = self.controller()
+        self.frame(controller)
+        self.assertTrue(controller.command({'action': 'listen'}))
+        missing = EnglishASR({'enabled': True})
+        with mock.patch('live.asr.importlib.util.find_spec', return_value=None):
+            missing.check_runtime()
+        controller._asr = missing
+        self.assertFalse(controller.submit_wav(wav_bytes()))
+        self.assertIn('not installed', controller.snapshot()['error'])
+        self.assertFalse(controller.snapshot()['listening'])
+        self.assertFalse(controller._ptt_armed)
+
     def test_ptt_timeout_and_oversize_payload_are_rejected(self):
         controller = self.controller()
         self.frame(controller)
@@ -359,7 +382,9 @@ class ConversationTests(unittest.TestCase):
                     mock.patch.object(bluetooth, 'BluetoothRoute', return_value=self.route), \
                     mock.patch.object(bluetooth, 'GreetingGate', side_effect=Gate), \
                     mock.patch('live.conversation.Path.read_text',
-                               return_value='{"audio":{"backend":"print","bluetooth_address":"AA:BB:CC:DD:EE:FF"}}'), \
+                               return_value=json.dumps({
+                                   'audio': {'backend': 'print', 'bluetooth_address': 'AA:BB:CC:DD:EE:FF'},
+                                   'conversation': {'enabled': True}})), \
                     mock.patch.dict('os.environ', {'DJOKER_AUDIO_CONFIG': 'operator-config.json'}):
                 before = time.monotonic()
                 controller = LiveConversation.from_environment('startup')
@@ -515,6 +540,7 @@ class ConversationTests(unittest.TestCase):
         self.assertTrue(status['connected'])
         self.assertFalse(status['listening'])
         self.assertFalse(controller.command({'action': 'mute', 'session': 'old'}))
+        self.assertFalse(controller.command({'action': 'mute', 'session_id': 'old'}))
         self.assertFalse(controller.command({'action': 'mute', 'pid': os.getpid() + 1}))
         self.assertFalse(controller.snapshot()['muted'])
         self.assertTrue(controller.command({
@@ -522,6 +548,20 @@ class ConversationTests(unittest.TestCase):
         self.assertTrue(controller.snapshot()['muted'])
         self.assertTrue(controller.command({'action': 'mute', 'value': False}))
         self.assertFalse(controller.snapshot()['muted'])
+        self.assertTrue(controller.command({'action': 'mute', 'value': True, 'session_id': 'test'}))
+
+    def test_configured_controller_starts_disabled_but_ingests_until_user_enables(self):
+        controller = LiveConversation(
+            'manual-enable', config={'audio': {'backend': 'print'}},
+            speaker=self.speaker, route=self.route, asr=self.asr, greeting_gate=Gate())
+        self.controllers.append(controller)
+        wait_for(lambda: controller.snapshot()['audio_ready'])
+        self.assertEqual(controller.snapshot()['state'], 'DISABLED')
+        self.assertTrue(controller.snapshot()['configured'])
+        self.assertTrue(self.frame(controller))
+        self.assertEqual(self.speaker.said, [])
+        self.assertTrue(controller.command({'action': 'enable', 'value': True}))
+        wait_for(lambda: controller.snapshot()['greeting_spoken'])
 
 
 class ASRTests(unittest.TestCase):

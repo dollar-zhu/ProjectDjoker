@@ -4,6 +4,10 @@ DJOKER_AUDIO_CONFIG points to JSON with audio (backend, voice,
 bluetooth_address), phraser, conversation (persona, cooldown_s), and asr
 sections. Without it the controller is disabled. All expensive I/O runs on
 independent bounded workers; PTT accepts in-memory WAV, never opens a mic.
+Controllers start disabled unless conversation.enabled is explicitly true.
+Ingest remains available while disabled; an enable command activates speech.
+Audio voice/WAV and local ASR paths resolve relative to the JSON config.
+An unset Bluetooth address disables speaking; there is no host-default route.
 Playback uses the worker host's selected audio route: an ADB board camera does
 not imply remote board audio. Attach/select Bluetooth on the worker host.
 """
@@ -38,7 +42,7 @@ class LiveConversation:
         self.session_id, self.reference_id = str(session_id), str(reference_id)
         self.config = dict(config or {})
         self.options = self.config.get('conversation') or {}
-        self.enabled = bool(self.config) and bool(self.options.get('enabled', True))
+        self.enabled = bool(self.config) and bool(self.options.get('enabled', False))
         self.muted = False
         self._lock = threading.RLock()
         self._stop = threading.Event()
@@ -158,7 +162,7 @@ class LiveConversation:
         """Consume only COCO's first 17 joints. No model/audio/network work here."""
         started = time.monotonic()
         with self._lock:
-            if self._closed or not self.enabled:
+            if self._closed:
                 return False
             self._has_frame = True
             try:
@@ -253,7 +257,8 @@ class LiveConversation:
             if self._closed:
                 return False
             if (('pid' in command and command['pid'] != os.getpid())
-                    or ('session' in command and command['session'] != self.session_id)):
+                    or ('session' in command and command['session'] != self.session_id)
+                    or ('session_id' in command and command['session_id'] != self.session_id)):
                 return False
             if action == 'enable':
                 # An unconfigured instance cannot acquire resources via a UI command.
@@ -274,6 +279,8 @@ class LiveConversation:
             elif action == 'listen':
                 if not self.enabled or self.muted or self._speaking:
                     return False
+                if self._asr_unavailable():
+                    return False
                 self._invalidate()
                 self._listening = self._ptt_armed = True
                 self._listen_deadline = time.monotonic() + 10
@@ -293,8 +300,13 @@ class LiveConversation:
     def submit_wav(self, data):
         """PTT: stop_listening is optional; receipt ends listening automatically."""
         with self._lock:
-            if (self._closed or not self.enabled or self.muted or self._speaking
-                    or not self._asr.enabled or not self._ptt_armed):
+            if self._closed or not self.enabled or self.muted or self._speaking:
+                return False
+            if self._asr_unavailable():
+                self._listening = self._ptt_armed = False
+                self._invalidate()
+                return False
+            if not self._ptt_armed:
                 return False
             if not isinstance(data, bytes) or not 44 <= len(data) <= MAX_WAV_BYTES:
                 self._error = 'Expected at most 10 seconds of mono PCM16/16 kHz WAV bytes'
@@ -304,6 +316,13 @@ class LiveConversation:
             self._thinking = True
             self._put(self._asr_q, (self._generation, data, time.monotonic()))
             return True
+
+    def _asr_unavailable(self):
+        status = self._asr.snapshot()
+        if not self._asr.enabled or status.get('available') is False:
+            self._error = ('ASR unavailable: ' + str(status.get('error') or 'ASR is not configured'))[:240]
+            return True
+        return False
 
     def _enqueue_phrase(self, kind, question=''):
         self._thinking = True
@@ -375,6 +394,8 @@ class LiveConversation:
                         if greet:
                             self._waiting_for_greeting = False
                             self._greeting_due = self._greeting_pending = True
+                        elif ready and bool(getattr(gate, 'ready', False)):
+                            self._waiting_for_greeting = False
                 except Exception as exc:
                     gate.update(False)
                     self._update_led(False)
@@ -492,6 +513,13 @@ class LiveConversation:
 
     def _audio_worker(self):
         try:
+            while not self._stop.is_set():
+                with self._lock:
+                    if self.enabled:
+                        break
+                self._stop.wait(.05)
+            if self._stop.is_set():
+                return
             if self._speaker is None:
                 from .audio import Speaker
                 cfg = self.config.get('audio') or {}
@@ -516,13 +544,18 @@ class LiveConversation:
                     if not self._allowed(token, greeting=code == 'GREETING'):
                         continue
                     self._speaking = True
+                    reserve = getattr(self._speaker, 'cancellation_token', None)
+                    speech_token = reserve() if callable(reserve) else None
                     self._response = text
                     self._time('playback_request_ms', started)
                     if self._frame:
                         self._time('latest_frame_age_at_playback_request_ms', self._frame['captured_at'])
                 playback_started = time.monotonic()
                 try:
-                    result = self._speaker.speak(text, code=code)
+                    if callable(reserve):
+                        result = self._speaker.speak(text, code=code, cancellation_token=speech_token)
+                    else:
+                        result = self._speaker.speak(text, code=code)
                     with self._lock:
                         if token == self._generation:
                             if getattr(result, 'ok', True):
@@ -622,6 +655,7 @@ class LiveConversation:
                 }
             return {
                 'state': state, 'enabled': self.enabled, 'muted': self.muted,
+                'configured': bool(self.config),
                 'updated': time.time(), 'pid': os.getpid(), 'session': self.session_id,
                 'listening': self._listening,
                 'paired': bool(self._route_status.get('paired')),
@@ -635,6 +669,8 @@ class LiveConversation:
                 'generation': self._generation, 'frame_id': self._frame and self._frame['frame_id'],
                 'greeting_spoken': self._greeting_sent,
                 'observation': self._candidate if self._fresh() else None,
+                'observation_text': (SENTENCES.get(self._candidate)
+                                     if self._fresh() and self._sustained() else None),
                 'route': dict(self._route_status), 'asr': self._asr.snapshot(),
                 'metrics': {**self._counts, 'timings': timings,
                             'playback_timing': 'request proxy only; not measured audible onset'},
