@@ -199,7 +199,7 @@ table QnnExecuTorchHtpBackendOptions {
   /// weights could be reused across all graphs.
   use_weight_sharing:bool;
 
-  /// Allows user to enable the usage of the System Level Cache Allocator for a given graph. 
+  /// Allows user to enable the usage of the System Level Cache Allocator for a given graph.
   /// It will help the by reducing overall bandwith on the use case.
   /// The feature is only supported by specific SOCs.
   use_slc_allocator:bool;

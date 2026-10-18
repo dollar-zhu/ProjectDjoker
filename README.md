@@ -49,14 +49,14 @@ flowchart LR
     PROC -. "Bridge RPC: show_result" .-> LED
 ```
 
-**Where Linux inference ends and MCU control begins.** All ML inference (pose and language) runs on Linux, on the NPU, through ExecuTorch. The STM32H5 is reserved for hard real-time physical I/O: the button that marks a finished serve, and an LED or buzzer that shows the result. These go through the Arduino Router Bridge (MsgPack-RPC). The MCU never runs a model, and Linux never toggles GPIO directly. **The MCU link is not implemented yet** (dashed lines); today the trigger is the **Stop & analyse** button or automatic serve-completion detection, and the result appears on screen. See [docs/executorch-npu.md §4](docs/executorch-npu.md#4-linux--mcu-boundary).
+**Where Linux inference ends and MCU control begins.** All ML inference (pose and language) runs on Linux, on the NPU, through ExecuTorch. The STM32H5 is reserved for hard real-time physical I/O: the button that marks a finished serve, and an LED or buzzer that shows the result. These go through the Arduino Router Bridge (MsgPack-RPC). The MCU never runs a model, and Linux never toggles GPIO directly. **The MCU link is not implemented yet** (dashed lines); today recording is started by a raised-hand ready gesture (or **Start recording**) and ended by automatic follow-through detection (or **Stop & analyse**), and the result appears on screen. See [docs/executorch-npu.md §4](docs/executorch-npu.md#4-linux--mcu-boundary).
 
 ### The input-to-action loop
 
-1. **Capture:** upload a phone clip, or use the board's USB camera in *Manual recording* or *Automatic serve capture*.
+1. **Capture:** upload a phone clip, or use the board's USB camera. In the default hands-free mode, the player raises a hand to arm recording, gets a 3-2-1 countdown, serves on **GO**, and recording stops on its own after the follow-through.
 2. **Pose on the NPU:** each frame is cropped to the player and run through `rtmpose_qnn_fp16_QCS8275.pte` by `qnn_executor_runner` on the Hexagon HTP.
 3. **Serve phases:** loading (deepest knee bend) and reach (highest hitting wrist) are detected from the 2D skeleton.
-4. **Compare:** a Djokovic (88 serves) or Sinner (219 serves) pose sequence, rotated into the same rear view, is overlaid on your video at quarter speed.
+4. **Compare:** a Djokovic (88 serves) or Sinner (219 serves) pose sequence, rotated into the same rear view, is time-aligned to your motion phase by phase (anchored at loading and reach) and overlaid on your video at quarter speed. An experimental 0–100 body-similarity score summarizes how closely twelve torso and limb joints follow the selected pro serve.
 5. **One cue:** a rule picks one practice focus from the knee angles at loading. Gemma 3 1B on the NPU rephrases it, a validator checks the reply, and the template is used if the reply fails.
 
 ## See it work
@@ -150,9 +150,9 @@ DJOKER_PYTHON="$PWD/../.venv/bin/python" npm run dev -- --hostname 127.0.0.1 --p
 Open http://127.0.0.1:3017. The status badge reads **Ventuno connected** (pose runs on the NPU) or **Mac CPU available** (fallback). Each review reports the backend and the mean model time per frame.
 
 - **Upload a clip:** drop a phone video of one serve (MP4/MOV, 0.5–20 s), draw a box around your player, set the camera view (**Behind the server** for pro comparison) and hitting hand, then **Process serve**. The review shows the timestamped skeleton, loading/reach moments and quality checks.
-- **Compare with a pro:** pick Novak Djokovic or Jannik Sinner, then **Overlay Djokovic · 0.25×**. The reference skeleton (dashed blue) plays over your video from just before loading.
+- **Compare with a pro:** pick Novak Djokovic or Jannik Sinner. The **Experimental body similarity** panel shows a 0–100 score, joint coverage, and which body regions were compared. **Overlay Djokovic · 0.25×** plays the reference skeleton (dashed blue) over your video, following your pace within each phase.
 - **Get one cue:** **Analyse with Gemma** sends the measured evidence and approved cue to Gemma 3 1B on the NPU. The UI labels whether the text came from the model or the template fallback, and whether a model reply was rejected.
-- **Live camera:** with a USB webcam on the board, choose **Manual recording** (**Start recording**, serve, **Stop & analyse**) or **Automatic serve capture**, which starts on a visible player and stops after an overhead swing and follow-through.
+- **Live camera:** with a USB webcam on the board, click **Start camera**. In **Ready gesture · automatic capture** (default), stand fully in frame, raise either hand to shoulder height for about 0.75 s, lower it during the **3 → 2 → 1** countdown, serve on **GO**, and stay in frame through the follow-through. The clip goes straight to review. **Manual recording** (**Start recording**, serve, **Stop & analyse**) is available for debugging.
 
 Environment variables: `DJOKER_BACKEND=cpu` forces the host CPU, `DJOKER_ONNX=<path>` sets the CPU model, `DJOKER_SERIAL=<serial>` selects the board. Details: [web/README.md](web/README.md).
 
@@ -191,7 +191,7 @@ node tests/test_visual_runtime.cjs
 ## Limitations
 
 - **2D, one camera.** Comparisons are valid only in a rear or near-rear view. The 3D pro references are projected into that view; they are not original rear-camera recordings.
-- **Draft coaching content.** Rules and thresholds are draft values, not yet validated with coaches or players. The pro comparison measures similarity to one player, not serve quality.
+- **Draft coaching content.** Rules and thresholds are draft values, not yet validated with coaches or players. The body-similarity score measures similarity to one selected pro serve, not serve quality, and the capture triggers are experimental heuristics, not verified ball-contact detection.
 - **No ball or racket tracking.** Contact is estimated from the highest wrist position; toss, racket drop and pronation are not measured.
 - **NPU precision.** The NPU model is fp16. int8 has been measured only on CPU (XNNPACK).
 - **Split inference in live mode.** In live capture, the host CPU runs continuous tracking to decide when a serve starts and ends; the recorded serve is then analyzed on the NPU.
