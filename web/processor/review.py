@@ -18,7 +18,7 @@ def retry(reason):
             'uncertainty':'No technique judgement was made.'}}
 
 
-def review(directory,times,pose,scores,view,handedness,image_size,crop_mode='fixed_operator'):
+def review(directory,times,pose,scores,view,handedness,image_size,crop_mode='fixed_operator',runtime='ExecuTorch QNN on Ventuno'):
     times=np.asarray(times,float);pose=np.asarray(pose,float);scores=np.asarray(scores,float)
     if len(times)<2 or not np.isfinite(times).all() or not (np.diff(times)>0).all():
         raise ValueError('Timestamps must increase strictly.')
@@ -54,7 +54,7 @@ def review(directory,times,pose,scores,view,handedness,image_size,crop_mode='fix
     source={'model':'rtmpose-m-wholebody-qnn-fp16','coordinate_system':'image_2d',
             'camera_view':view,'fps':None,'axis_convention':'x_right_y_down','units':'pixels',
             'metric_space':True,'image_size':image_size,'comparison_profile_id':None,
-            'runtime':'ExecuTorch QNN on Ventuno','crop_mode':crop_mode}
+            'runtime':runtime,'crop_mode':crop_mode}
     packet=export_canonical(directory/'dms',shot_id=directory.name,player='uploaded_player',handedness=handedness,
              source=source,pose=masked,timestamps=times-times[0],joint_confidence=np.where(visible,np.clip(scores,0,1),np.nan),
              confidence_kind='tracking_score',score_definition='SimCC minimum xy peak clipped to 0..1; not a probability',

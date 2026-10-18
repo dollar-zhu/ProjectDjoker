@@ -3,9 +3,11 @@ import {fitReference,type Fit,type PoseFrame} from './overlay';
 
 export type MotionAlignment = {time:number;referencePhase:number}[];
 export type RegionCoverage = {hittingArm:number;tossingArm:number;legs:number;torso:number};
+export type RegionScores = Record<keyof RegionCoverage,number|null>;
+export type PhaseScore = {phase:string;start:number;end:number;score:number|null};
 type Stage = {id:string;status:string;time:number|null;start:number|null;end:number|null};
 export type MotionInput = {frames:PoseFrame[];reference:number[][][];events:{id:string;time:number}[];duration:number;view:string;handedness:string;stages?:Stage[]};
-export type MotionSimilarity = {status:'unavailable';reason:string;alignment?:MotionAlignment;fit?:Fit;coverage?:number} | {status:'available';score:number;alignment:MotionAlignment;fit:Fit;meanDistance:number;coverage:number;quality:'full'|'partial';excludedMeasurements:string[];regionCoverage:RegionCoverage;method:string};
+export type MotionSimilarity = {status:'unavailable';reason:string;alignment?:MotionAlignment;fit?:Fit;coverage?:number} | {status:'available';score:number;alignment:MotionAlignment;fit:Fit;meanDistance:number;coverage:number;quality:'full'|'partial';excludedMeasurements:string[];regionCoverage:RegionCoverage;regionScores:RegionScores;phaseScores:PhaseScore[];method:string};
 // COCO left/right correspondences are identical to the rear overlay. No yaw or mirror search.
 const JOINTS=[[5,11],[6,14],[7,12],[8,15],[9,13],[10,16],[11,4],[12,1],[13,5],[14,2],[15,6],[16,3]];
 const REGIONS=[
@@ -23,6 +25,8 @@ const visible=(p:PoseFrame,i:number)=>p.scores[i]>=CONFIDENCE&&p.xy[i]?.length>=
 const torso=(p:PoseFrame)=>dist(mid(p.xy[5],p.xy[6]),mid(p.xy[11],p.xy[12]));
 const anchors=(p:PoseFrame)=>[5,6,11,12].every(i=>visible(p,i))&&torso(p)>10;
 const unavailable=(reason:string):MotionSimilarity=>({status:'unavailable',reason});
+// The 0.6 torso-length falloff is a provisional display scale, not an accuracy calibration.
+const displayScore=(distance:number)=>Math.round(100*Math.exp(-distance/.6));
 
 /** Does not extrapolate an aligned serve into walk-in, walk-out, or unobserved footage. */
 export function referencePhaseAt(alignment:MotionAlignment,time:number):number|null {
@@ -131,7 +135,9 @@ export function compareMotion(input:MotionInput):MotionSimilarity {
  const size=torso(loadFrame);
  if((mid(reachFrame.xy[5],reachFrame.xy[6])[1]-reachFrame.xy[10][1])/size<.25)return unavailable('A clear overhead reach is needed for a complete serve comparison.');
  const [start,end]=boundaries(input,load,reach,size);
- let reason=start===null||end===null?'A complete setup and observed follow-through/finish are needed; record the whole serve.':'';
+ let reason=start===null&&end===null?'The setup and follow-through could not be identified reliably in this recording.'
+  :start===null?'The setup before loading could not be identified reliably in this recording.'
+  :end===null?'The follow-through / finish could not be identified reliably in this recording.':'';
  const inWindow=frames.filter(p=>p.time>=(start??load)&&p.time<=(end??reach));
  if(inWindow.some((p,i)=>i>0&&p.time-inWindow[i-1].time>MAX_GAP))return unavailable('Tracking has a long gap within the serve.');
  const counts=JOINTS.map(([j])=>inWindow.filter(p=>visible(p,j)).length/inWindow.length);
@@ -142,6 +148,7 @@ export function compareMotion(input:MotionInput):MotionSimilarity {
  const alignment:MotionAlignment=[];let totalError=0,totalWeight=0;
  const excludedMeasurements:string[]=[];
  const regionCoverage:RegionCoverage={hittingArm:0,tossingArm:0,legs:0,torso:0};
+ const regionTotals=REGIONS.map(()=>({sum:0,weight:0})),phaseScores:PhaseScore[]=[];
  const times=[start??load,load,reach,end??reach],phases=[0,40,80,100];
  for(let segment=0;segment<3;segment++){
   if((segment===0&&start===null)||(segment===2&&end===null))continue;
@@ -197,17 +204,19 @@ export function compareMotion(input:MotionInput):MotionSimilarity {
     if(d){regionErrors[r].sum+=d.error*d.confidence;regionErrors[r].confidence+=d.confidence;}
    }
   }
+  let phaseError=0,phaseRegionWeight=0;
   for(const[r,region]of REGIONS.entries()){
    const d=regionErrors[r];
-   if(d.confidence){totalError+=phaseWeight*region.weight*d.sum/d.confidence;totalWeight+=phaseWeight*region.weight;}
+   if(d.confidence){const e=d.sum/d.confidence;totalError+=phaseWeight*region.weight*e;totalWeight+=phaseWeight*region.weight;regionTotals[r].sum+=phaseWeight*e;regionTotals[r].weight+=phaseWeight;phaseError+=region.weight*e;phaseRegionWeight+=region.weight;}
   }
+  phaseScores.push({phase:PHASE_NAMES[segment],start:times[segment],end:times[segment+1],score:phaseRegionWeight?displayScore(phaseError/phaseRegionWeight):null});
  }
  for(const r of REGIONS)regionCoverage[r.id]=Math.max(0,Math.min(1,regionCoverage[r.id]));
  coverage=Math.max(0,Math.min(1,REGIONS.reduce((sum,r)=>sum+r.weight*regionCoverage[r.id],0)));
  if(reason)return {status:'unavailable',reason,...(alignment.length?{alignment,fit,coverage}:{})};
  const meanDistance=totalError/totalWeight;
- // The 0.6 torso-length falloff is a provisional display scale, not an accuracy calibration.
- return {status:'available',score:Math.round(100*Math.exp(-meanDistance/.6)),alignment,fit,meanDistance,coverage,quality:excludedMeasurements.length?'partial':'full',excludedMeasurements,regionCoverage,method:'experimental-rear-pose-dtw-v2'};
+ const regionScores=Object.fromEntries(REGIONS.map((r,i)=>[r.id,regionTotals[i].weight?displayScore(regionTotals[i].sum/regionTotals[i].weight):null])) as RegionScores;
+ return {status:'available',score:displayScore(meanDistance),alignment,fit,meanDistance,coverage,quality:excludedMeasurements.length?'partial':'full',excludedMeasurements,regionCoverage,regionScores,phaseScores,method:'experimental-rear-pose-dtw-v2'};
 }
 
 /** Shared fractional pose sampler for the rendered overlay and its score. */

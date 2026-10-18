@@ -26,6 +26,7 @@ test('identical projected motion scores 100 and supplies exact phase anchors',()
  const r=compareMotion(fixture());assert.equal(r.status,'available');if(r.status!=='available')return;
  assert.equal(r.score,100);assert.equal(r.quality,'full');assert.ok(r.coverage<=1&&r.coverage>=0);assert.ok(Object.values(r.regionCoverage).every(v=>v<=1&&v>=0));assert.equal(referencePhaseAt(r.alignment,2),40);assert.equal(referencePhaseAt(r.alignment,4),80);
  assert.equal(referencePhaseAt(r.alignment,-.1),null);assert.equal(referencePhaseAt(r.alignment,5.1),null);
+ assert.deepEqual(r.regionScores,{hittingArm:100,tossingArm:100,legs:100,torso:100});assert.deepEqual(r.phaseScores.map(p=>[p.phase,p.start,p.end,p.score]),[['preparation',0,2,100],['upward swing',2,4,100],['follow-through',4,5,100]]);
  assert.ok(r.alignment.every((p,i)=>i===0||p.referencePhase>=r.alignment[i-1].referencePhase));
 });
 test('alignment follows changing pace and keeps similar movement highly similar',()=>{
@@ -38,7 +39,8 @@ test('translation and fixed body scale do not change similarity',()=>{
 });
 test('meaningful limb deviations reduce score rather than being warped away',()=>{
  const f=fixture();for(const p of f.frames){p.xy[10][0]+=80;p.xy[8][0]+=50;}
- const r=compareMotion(f);assert.equal(r.status,'available');if(r.status==='available')assert.ok(r.score<85);
+ const r=compareMotion(f);assert.equal(r.status,'available');if(r.status!=='available')return;assert.ok(r.score<85);
+ const regions=r.regionScores as Record<string,number>;assert.equal(Object.entries(regions).sort((a,b)=>a[1]-b[1])[0][0],'hittingArm');assert.equal(regions.legs,100);
 });
 test('missing whole phase and incomplete tail are not full-motion scores',()=>{
  const f=fixture();f.frames=f.frames.filter(p=>p.time<2.3||p.time>3.6);assert.equal(compareMotion(f).status,'unavailable');
@@ -159,4 +161,29 @@ test('sustained torso loss or missing hip anchors still prevents a whole-motion 
   for(const p of f.frames)if(p.time>=2.8&&p.time<=(hips?2.85:3.2))for(const j of hips?[11,12]:[5,6])p.scores[j]=.2;
   const r=compareMotion(f);assert.equal(r.status,'unavailable');assert.ok(!('score' in r));
  }
+});
+
+test('12:26:24 live recording retains recovery from original camera observations',()=>{
+ const f=JSON.parse(readFileSync(new URL('../../processor/fixtures/live-serve-168.json',import.meta.url),'utf8'));
+ const r=compareMotion({frames:f.frames,reference,events:[{id:'loading',time:1.8096},{id:'reach',time:2.3389}],duration:f.meta.duration,view:'rear',handedness:'right',stages:[{id:'setup',status:'estimated',time:.8317,start:.6,end:.8317}]});
+ assert.equal(r.status,'available',r.status==='unavailable'?r.reason:'');if(r.status!=='available')return;
+ assert.equal(r.quality,'partial');assert.equal(r.alignment.at(-1)!.time,2.8069);
+ assert.equal(r.alignment.at(-1)!.referencePhase,100);
+ assert.ok(r.excludedMeasurements.some(s=>/hitting wrist.*follow-through/i.test(s)));
+});
+
+test('an invalid setup anchor reports setup uncertainty without blaming the observed finish',()=>{
+ const f=fixture();f.stages[0]={id:'setup',status:'estimated',time:1.95,start:1.7,end:1.95};
+ const r=compareMotion(f);assert.equal(r.status,'unavailable');if(r.status!=='unavailable')return;
+ assert.match(r.reason,/setup/i);assert.doesNotMatch(r.reason,/follow-through|finish|record the whole serve/i);
+});
+
+test('12:32:47 recording scores with the observed pre-raise setup despite an occluded toss',()=>{
+ const f=JSON.parse(readFileSync(new URL('../../processor/fixtures/serve-setup-2b7.json',import.meta.url),'utf8'));
+ // This endpoint is independently recovered from these joints by test_stages.py.
+ f.stages=f.stages.map((s:{id:string})=>s.id==='setup'?{...s,time:1.8083,start:1.5913,end:1.8083}:s);
+ const r=compareMotion({...f,reference,view:'rear',handedness:'right'});
+ assert.equal(r.status,'available',r.status==='unavailable'?r.reason:'');if(r.status!=='available')return;
+ assert.equal(r.alignment[0].time,1.8083);assert.equal(r.alignment.at(-1)!.time,3.8153);
+ assert.equal(r.quality,'partial');assert.ok(r.excludedMeasurements.some(s=>/tossing wrist/i.test(s)));
 });

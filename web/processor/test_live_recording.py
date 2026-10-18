@@ -50,6 +50,8 @@ class RecordingTests(unittest.TestCase):
             self.assertEqual(data['status'],'ready')
             self.assertEqual(data['options'],options)
             self.assertEqual(data['capture']['completion'],'manual_stop')
+            self.assertEqual(data['capture']['tracking_options'], options)
+            self.assertEqual(data['capture']['tracking_image_size'], [64,48])
             self.assertEqual(json.loads((root/job/'tracking.json').read_text()),[{'time':0,'present':False}])
             self.assertTrue((root/job/'video.mp4').exists())
             self.assertFalse(path.exists())

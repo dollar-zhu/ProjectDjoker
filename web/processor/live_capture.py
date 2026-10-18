@@ -89,6 +89,10 @@ def save_review(root, path, options, completion="estimated_overhead_then_followt
             if crop!=options['crop']:
                 update(folder,options={**options,'crop':crop},
                        capture={**job['capture'],'crop_mode':'recorded_tracking_extent'})
+        prepared=json.loads((folder/'job.json').read_text())
+        update(folder,capture={**prepared['capture'],
+                               'tracking_options':prepared['options'],
+                               'tracking_image_size':[prepared['meta']['width'],prepared['meta']['height']]})
     except Exception as exc:
         update(folder, status='failed', stage='Capture preparation failed', error=str(exc))
         raise

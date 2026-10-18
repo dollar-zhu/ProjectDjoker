@@ -14,6 +14,25 @@ def full_sequence():
 
 
 class StageTests(unittest.TestCase):
+    def test_hidden_toss_wrist_does_not_turn_loading_pause_into_setup(self):
+        data=json.loads((Path(__file__).parent/'fixtures/serve-setup-2b7.json').read_text())
+        t=np.asarray([f['time'] for f in data['frames']])
+        p=np.asarray([f['xy'] for f in data['frames']])
+        c=np.asarray([f['scores'] for f in data['frames']])
+        with tempfile.TemporaryDirectory() as d:
+            result=review(Path(d),t,p,c,'rear','right',[640,480])
+        stages={s['id']:s for s in result['stages']}
+        self.assertEqual(stages['setup']['status'],'estimated')
+        self.assertLess(stages['setup']['time'],1.85,'Setup must precede the visible arm raise, not mark the loading pause')
+        self.assertEqual(stages['setup']['time'],1.8083,'Keep browser comparison fixture in sync')
+        self.assertEqual(stages['toss']['status'],'unavailable','Do not fabricate an occluded wrist trajectory')
+        self.assertEqual(stages['finish']['status'],'estimated')
+
+    def test_raised_tossing_arm_cannot_be_labelled_as_setup(self):
+        t,p,c=full_sequence();p[:,9,1]=30;p[:,7,1]=60
+        result=self.analyse(t,p,c)
+        self.assertEqual(result['stages'][0]['status'],'unavailable')
+
     def analyse(self,t,p,c):
         with tempfile.TemporaryDirectory() as d:
             return review(Path(d),t,p,c,'rear','right',[240,300])

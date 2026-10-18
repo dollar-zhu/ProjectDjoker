@@ -54,8 +54,70 @@ def prepare(d):
            'duration':float(p['format']['duration']),'playback_fps':30,'audio':any(s['codec_type']=='audio' for s in p['streams'])})
 
 
+def recorded_tracking(d,job):
+    """Reuse camera observations only for the same player selection and geometry.
+
+    Re-inference on compressed/resampled video can lose the very recovery that
+    ended live capture. Completion labels are never evidence: review still
+    derives every event from the original confidence-masked joints.
+    """
+    capture=job.get('capture',{});meta=job['meta']
+    if (capture.get('source')!='Ventuno USB webcam'
+            or capture.get('tracking_options')!=job['options']
+            or capture.get('tracking_image_size')!=[meta['width'],meta['height']]):
+        return None
+    try:
+        frames=json.loads((d/'tracking.json').read_text())
+        times=np.asarray([f['time'] for f in frames],float)
+        poses=np.asarray([f['xy'] for f in frames],float)
+        scores=np.asarray([f['scores'] for f in frames],float)
+        if (len(times)<15 or poses.shape!=(len(times),17,2) or scores.shape!=(len(times),17)
+                or not all(np.isfinite(a).all() for a in [times,poses,scores])
+                or not (np.diff(times)>0).all() or times[0]!=0
+                or times[-1]>meta['duration'] or meta['duration']-times[-1]>.2):
+            return None
+        # The live gate rejects a pose whose hip center leaves its inference
+        # area. Preserve that rejection instead of reviving a bystander's pose.
+        for i,f in enumerate(frames):
+            x1,y1,x2,y2=f['crop']
+            x,y=poses[i,11:13].mean(0)/[meta['width'],meta['height']]
+            if not (x1<=x<=x2 and y1<=y<=y2): scores[i]=0
+        return times,poses,scores
+    except (OSError,ValueError,KeyError,TypeError):
+        return None
+
+
+def finish_review(d,job,times,poses,scores,stats):
+    o=job['options'];w,h=job['meta']['width'],job['meta']['height']
+    update(d,stage='Finding moments and preparing feedback',progress=90)
+    tracked_crop=job.get('capture',{}).get('crop_mode')=='recorded_tracking_extent'
+    if (d/'dms').exists(): shutil.rmtree(d/'dms')
+    result=review(d,times,poses,scores,o['view'],o['handedness'],[w,h],
+                  crop_mode='recorded_tracking_extent' if tracked_crop else 'fixed_operator',
+                  runtime=stats['backend'])
+    recorded=stats.get('pose_source')=='recorded_live_tracking'
+    result.update({'frames':[{'time':float(t),'xy':p.tolist(),'scores':s.tolist()} for t,p,s in zip(times,poses,scores)],
+        'stats':stats,
+        'limitations':[('Original live camera joints and timestamps retained; uncertain joints remain excluded.' if recorded else
+                        'Player crop estimated from recorded tracking; inspect the skeleton for cropping or occlusion errors.' if tracked_crop else
+                        'Player crop selected manually; inspect the skeleton for wrong-person or occlusion errors.'),
+        'Body-movement stages are estimates. Ball release, racket drop, contact and landing are not measured. Missing stages reflect insufficient tracking.',
+        'Reference-based corrections and scores are withheld until validated.',
+        'All processing ran locally on the Mac CPU.' if 'CPU' in stats['backend'] else 'Mac prepares video and feedback; Ventuno performs pose inference.']})
+    temp=d/'result.tmp';temp.write_text(json.dumps(result,allow_nan=False));temp.replace(d/'result.json')
+    update(d,status='complete',stage='Review ready',progress=100)
+
+
 def process(d):
     started=time.monotonic();job=json.loads((d/'job.json').read_text());o=job['options']
+    tracked=recorded_tracking(d,job)
+    if tracked is not None:
+        times,poses,scores=tracked
+        finish_review(d,job,times,poses,scores,{
+            'frames':len(times),'sample_fps':float(1/np.median(np.diff(times))),
+            'mean_inference_ms':None,'processing_seconds':round(time.monotonic()-started,2),
+            'backend':job['capture']['tracking_backend'],'pose_source':'recorded_live_tracking'})
+        return
     update(d,status='queued',stage='Waiting for processor')
     # Serialize all workers, including workers launched by different Next.js processes.
     with open(d.parent/'ventuno.lock','w') as lock:
@@ -76,7 +138,7 @@ def process(d):
                 raise ValueError('Unexpected ONNX input contract; use the exported wholebody RTMPose model.')
         update(d,status='processing',stage='Preparing player crops',progress=15)
         frames=d/'frames';inputs=d/'inputs';outputs=d/'outputs'
-        for folder in [frames,inputs,outputs,d/'dms']:
+        for folder in [frames,inputs,outputs]:
             if folder.exists(): shutil.rmtree(folder)
         frames.mkdir();inputs.mkdir()
         command(['ffmpeg','-v','error','-i',str(d/'video.mp4'),'-vf','fps=20',str(frames/'%05d.jpg')])
@@ -116,22 +178,12 @@ def process(d):
                 if not (np.isfinite(px).all() and np.isfinite(py).all()): raise ValueError('Pose output contains nonfinite values.')
                 xy,score=decode(px,py,matrix);poses.append(xy);scores.append(score)
             latencies=[float(x) for x in re.findall(r'1 inference took ([\d.]+) ms',log)]
-    update(d,stage='Finding moments and preparing feedback',progress=90)
     poses=np.asarray(poses);scores=np.asarray(scores);times=np.arange(len(poses))/20
-    tracked_crop=job.get('capture',{}).get('crop_mode')=='recorded_tracking_extent'
-    result=review(d,times,poses,scores,o['view'],o['handedness'],[w,h],
-                  crop_mode='recorded_tracking_extent' if tracked_crop else 'fixed_operator')
-    result.update({'frames':[{'time':float(t),'xy':p.tolist(),'scores':s.tolist()} for t,p,s in zip(times,poses,scores)],
-        'stats':{'frames':len(poses),'sample_fps':20,'mean_inference_ms':float(np.mean(latencies)) if latencies else None,
-                 'processing_seconds':round(time.monotonic()-started,2),'backend':'Mac CPU · ONNX Runtime' if session else 'Ventuno · ExecuTorch QNN FP16'},
-        'limitations':[('Player crop estimated from recorded tracking; inspect the skeleton for cropping or occlusion errors.' if tracked_crop else 'Player crop selected manually; inspect the skeleton for wrong-person or occlusion errors.'),
-        'Body-movement stages are estimates. Ball release, racket drop, contact and landing are not measured. Missing stages reflect insufficient tracking.',
-        'Reference-based corrections and scores are withheld until validated.',
-        'All processing ran locally on the Mac CPU.' if session else 'Mac prepares video and feedback; Ventuno performs pose inference.']})
-    (d/'result.json').write_text(json.dumps(result,allow_nan=False))
     for folder in [frames,inputs,outputs]:
         if folder.exists(): shutil.rmtree(folder)
-    update(d,status='complete',stage='Review ready',progress=100)
+    finish_review(d,job,times,poses,scores,{
+        'frames':len(poses),'sample_fps':20,'mean_inference_ms':float(np.mean(latencies)) if latencies else None,
+        'processing_seconds':round(time.monotonic()-started,2),'backend':'Mac CPU · ONNX Runtime' if session else 'Ventuno · ExecuTorch QNN FP16'})
 
 
 if __name__=='__main__':

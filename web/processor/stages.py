@@ -66,6 +66,14 @@ def movement_stages(times,pose,load,reach,offset=0):
     # Stable setup must precede the arm rise (or loading if rise is unavailable).
     setup_end=toss_start if toss_start is not None else load
     for b in range(setup_end,-1,-1):
+        # A pause with the tossing arm already raised is preparation/loading,
+        # not the initial stance. A visible lowered elbow can establish setup
+        # when the wrist is hidden, without inventing a tossing-wrist path.
+        elbow=(shoulders[b,1]-s[b,7,1])/scale
+        if np.isfinite(toss[b]):
+            if toss[b]>.1: continue
+        elif not np.isfinite(elbow) or elbow>-.15:
+            continue
         a=int(np.searchsorted(t,t[b]-.25))
         if t[b]-t[a]<.2 or not visible(a,b,[5,6,11,12,15,16]): continue
         if np.max(np.ptp(s[a:b+1,[5,6,11,12,15,16]],axis=0))/scale>.1: continue
