@@ -1,0 +1,524 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Project Djoker DMS 0.1",
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "const": "dms-0.1"
+    },
+    "shot_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]+$"
+    },
+    "shot_type": {
+      "const": "serve"
+    },
+    "player": {
+      "type": "string",
+      "minLength": 1
+    },
+    "handedness": {
+      "enum": [
+        "left",
+        "right",
+        "unknown"
+      ]
+    },
+    "source": {
+      "type": "object",
+      "properties": {
+        "model": {
+          "type": "string",
+          "minLength": 1
+        },
+        "coordinate_system": {
+          "type": "string",
+          "minLength": 1
+        },
+        "camera_view": {
+          "type": "string",
+          "minLength": 1
+        },
+        "fps": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "exclusiveMinimum": 0
+        },
+        "axis_convention": {
+          "type": "string",
+          "minLength": 1
+        },
+        "units": {
+          "type": "string",
+          "minLength": 1
+        },
+        "metric_space": {
+          "type": "boolean"
+        },
+        "comparison_profile_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "model",
+        "coordinate_system",
+        "camera_view",
+        "fps",
+        "axis_convention",
+        "units",
+        "metric_space"
+      ]
+    },
+    "pose": {
+      "type": "object",
+      "properties": {
+        "shape": {
+          "type": "array",
+          "prefixItems": [
+            {
+              "type": "integer",
+              "minimum": 1
+            },
+            {
+              "const": 17
+            },
+            {
+              "enum": [
+                2,
+                3
+              ]
+            }
+          ],
+          "items": false,
+          "minItems": 3
+        },
+        "file": {
+          "type": "string",
+          "pattern": "^[^/\\\\]+\\.npy$"
+        },
+        "joint_schema": {
+          "enum": [
+            "canonical17",
+            "djoker17_unvalidated"
+          ]
+        },
+        "joint_names": {
+          "oneOf": [
+            {
+              "const": [
+                "nose",
+                "left_eye",
+                "right_eye",
+                "left_ear",
+                "right_ear",
+                "left_shoulder",
+                "right_shoulder",
+                "left_elbow",
+                "right_elbow",
+                "left_wrist",
+                "right_wrist",
+                "left_hip",
+                "right_hip",
+                "left_knee",
+                "right_knee",
+                "left_ankle",
+                "right_ankle"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "mapping_validated": {
+          "type": "boolean"
+        },
+        "mapping_evidence": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "shape",
+        "file",
+        "joint_schema",
+        "joint_names",
+        "mapping_validated",
+        "mapping_evidence"
+      ],
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "joint_schema": {
+                "const": "canonical17"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "mapping_validated": {
+                "const": true
+              },
+              "joint_names": {
+                "const": [
+                  "nose",
+                  "left_eye",
+                  "right_eye",
+                  "left_ear",
+                  "right_ear",
+                  "left_shoulder",
+                  "right_shoulder",
+                  "left_elbow",
+                  "right_elbow",
+                  "left_wrist",
+                  "right_wrist",
+                  "left_hip",
+                  "right_hip",
+                  "left_knee",
+                  "right_knee",
+                  "left_ankle",
+                  "right_ankle"
+                ]
+              },
+              "mapping_evidence": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "mapping_validated": {
+                "const": false
+              },
+              "joint_names": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "features": {
+      "type": "object",
+      "properties": {
+        "shape": {
+          "type": "array",
+          "prefixItems": [
+            {
+              "type": "integer",
+              "minimum": 1
+            },
+            {
+              "const": 8
+            }
+          ],
+          "items": false,
+          "minItems": 2
+        },
+        "file": {
+          "type": "string",
+          "pattern": "^[^/\\\\]+\\.npy$"
+        },
+        "angle_schema": {
+          "const": "dms-angles-v1"
+        },
+        "names": {
+          "const": [
+            "left_elbow_flexion",
+            "right_elbow_flexion",
+            "left_knee_flexion",
+            "right_knee_flexion",
+            "left_shoulder_angle",
+            "right_shoulder_angle",
+            "left_hip_angle",
+            "right_hip_angle"
+          ]
+        },
+        "definitions": {
+          "const": [
+            {
+              "name": "left_elbow_flexion",
+              "joints": [
+                "left_shoulder",
+                "left_elbow",
+                "left_wrist"
+              ],
+              "calculation": "interior_angle",
+              "units": "degrees"
+            },
+            {
+              "name": "right_elbow_flexion",
+              "joints": [
+                "right_shoulder",
+                "right_elbow",
+                "right_wrist"
+              ],
+              "calculation": "interior_angle",
+              "units": "degrees"
+            },
+            {
+              "name": "left_knee_flexion",
+              "joints": [
+                "left_hip",
+                "left_knee",
+                "left_ankle"
+              ],
+              "calculation": "interior_angle",
+              "units": "degrees"
+            },
+            {
+              "name": "right_knee_flexion",
+              "joints": [
+                "right_hip",
+                "right_knee",
+                "right_ankle"
+              ],
+              "calculation": "interior_angle",
+              "units": "degrees"
+            },
+            {
+              "name": "left_shoulder_angle",
+              "joints": [
+                "left_elbow",
+                "left_shoulder",
+                "left_hip"
+              ],
+              "calculation": "interior_angle",
+              "units": "degrees"
+            },
+            {
+              "name": "right_shoulder_angle",
+              "joints": [
+                "right_elbow",
+                "right_shoulder",
+                "right_hip"
+              ],
+              "calculation": "interior_angle",
+              "units": "degrees"
+            },
+            {
+              "name": "left_hip_angle",
+              "joints": [
+                "left_shoulder",
+                "left_hip",
+                "left_knee"
+              ],
+              "calculation": "interior_angle",
+              "units": "degrees"
+            },
+            {
+              "name": "right_hip_angle",
+              "joints": [
+                "right_shoulder",
+                "right_hip",
+                "right_knee"
+              ],
+              "calculation": "interior_angle",
+              "units": "degrees"
+            }
+          ]
+        },
+        "formula": {
+          "const": "degrees(arccos(clip(dot(A-B,C-B)/(norm(A-B)*norm(C-B)),-1,1)))"
+        },
+        "units": {
+          "const": "degrees"
+        },
+        "representation": {
+          "enum": [
+            "projected_2d",
+            "estimated_3d"
+          ]
+        },
+        "definitions_validated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "shape",
+        "file",
+        "angle_schema",
+        "names",
+        "definitions",
+        "formula",
+        "units",
+        "representation",
+        "definitions_validated"
+      ]
+    },
+    "timestamps": {
+      "type": "object",
+      "properties": {
+        "shape": {
+          "type": "array",
+          "prefixItems": [
+            {
+              "type": "integer",
+              "minimum": 1
+            }
+          ],
+          "items": false,
+          "minItems": 1
+        },
+        "file": {
+          "type": "string",
+          "pattern": "^[^/\\\\]+\\.npy$"
+        },
+        "units": {
+          "const": "seconds"
+        },
+        "status": {
+          "enum": [
+            "observed",
+            "unavailable"
+          ]
+        }
+      },
+      "required": [
+        "shape",
+        "file",
+        "units",
+        "status"
+      ]
+    },
+    "joint_confidence": {
+      "type": "object",
+      "properties": {
+        "shape": {
+          "type": "array",
+          "prefixItems": [
+            {
+              "type": "integer",
+              "minimum": 1
+            },
+            {
+              "const": 17
+            }
+          ],
+          "items": false,
+          "minItems": 2
+        },
+        "file": {
+          "type": "string",
+          "pattern": "^[^/\\\\]+\\.npy$"
+        },
+        "kind": {
+          "enum": [
+            "tracking_score",
+            "availability",
+            "unavailable"
+          ]
+        },
+        "score_definition": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "shape",
+        "file",
+        "kind",
+        "score_definition"
+      ]
+    },
+    "events": {
+      "type": "object",
+      "additionalProperties": {
+        "oneOf": [
+          {
+            "type": "null"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "frame": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "minimum": 0
+              },
+              "timestamp": {
+                "type": [
+                  "number",
+                  "null"
+                ],
+                "minimum": 0
+              },
+              "confidence": {
+                "type": [
+                  "number",
+                  "null"
+                ],
+                "minimum": 0,
+                "maximum": 1
+              },
+              "method": {
+                "type": "string",
+                "minLength": 1
+              },
+              "definition_id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "status": {
+                "enum": [
+                  "estimated",
+                  "validated"
+                ]
+              }
+            },
+            "required": [
+              "frame",
+              "timestamp",
+              "confidence",
+              "method",
+              "definition_id",
+              "status"
+            ],
+            "anyOf": [
+              {
+                "properties": {
+                  "frame": {
+                    "type": "integer"
+                  }
+                }
+              },
+              {
+                "properties": {
+                  "timestamp": {
+                    "type": "number"
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      }
+    }
+  },
+  "required": [
+    "schema_version",
+    "shot_id",
+    "shot_type",
+    "player",
+    "handedness",
+    "source",
+    "pose",
+    "features",
+    "timestamps",
+    "joint_confidence",
+    "events"
+  ]
+}

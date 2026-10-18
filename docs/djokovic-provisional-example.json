@@ -1,0 +1,180 @@
+{
+  "schema_version": "dms-0.1",
+  "shot_id": "2024-usopen-1164_pt0004_srv1",
+  "shot_type": "serve",
+  "player": "Novak Djokovic",
+  "handedness": "unknown",
+  "source": {
+    "model": "dataset_export_motionbert_reported",
+    "coordinate_system": "unverified",
+    "camera_view": "unknown",
+    "fps": null,
+    "axis_convention": "unverified",
+    "units": "unknown",
+    "metric_space": false,
+    "comparison_profile_id": null
+  },
+  "pose": {
+    "joint_schema": "djoker17_unvalidated",
+    "joint_names": null,
+    "mapping_validated": false,
+    "shape": [
+      79,
+      17,
+      3
+    ],
+    "file": "2024-usopen-1164_pt0004_srv1_pose.npy",
+    "mapping_evidence": null,
+    "source_layout_hypothesis": "H36M; dataset author confirmation pending"
+  },
+  "features": {
+    "angle_schema": "dms-angles-v1",
+    "names": [
+      "left_elbow_flexion",
+      "right_elbow_flexion",
+      "left_knee_flexion",
+      "right_knee_flexion",
+      "left_shoulder_angle",
+      "right_shoulder_angle",
+      "left_hip_angle",
+      "right_hip_angle"
+    ],
+    "definitions": [
+      {
+        "name": "left_elbow_flexion",
+        "joints": [
+          "left_shoulder",
+          "left_elbow",
+          "left_wrist"
+        ],
+        "calculation": "interior_angle",
+        "units": "degrees"
+      },
+      {
+        "name": "right_elbow_flexion",
+        "joints": [
+          "right_shoulder",
+          "right_elbow",
+          "right_wrist"
+        ],
+        "calculation": "interior_angle",
+        "units": "degrees"
+      },
+      {
+        "name": "left_knee_flexion",
+        "joints": [
+          "left_hip",
+          "left_knee",
+          "left_ankle"
+        ],
+        "calculation": "interior_angle",
+        "units": "degrees"
+      },
+      {
+        "name": "right_knee_flexion",
+        "joints": [
+          "right_hip",
+          "right_knee",
+          "right_ankle"
+        ],
+        "calculation": "interior_angle",
+        "units": "degrees"
+      },
+      {
+        "name": "left_shoulder_angle",
+        "joints": [
+          "left_elbow",
+          "left_shoulder",
+          "left_hip"
+        ],
+        "calculation": "interior_angle",
+        "units": "degrees"
+      },
+      {
+        "name": "right_shoulder_angle",
+        "joints": [
+          "right_elbow",
+          "right_shoulder",
+          "right_hip"
+        ],
+        "calculation": "interior_angle",
+        "units": "degrees"
+      },
+      {
+        "name": "left_hip_angle",
+        "joints": [
+          "left_shoulder",
+          "left_hip",
+          "left_knee"
+        ],
+        "calculation": "interior_angle",
+        "units": "degrees"
+      },
+      {
+        "name": "right_hip_angle",
+        "joints": [
+          "right_shoulder",
+          "right_hip",
+          "right_knee"
+        ],
+        "calculation": "interior_angle",
+        "units": "degrees"
+      }
+    ],
+    "formula": "degrees(arccos(clip(dot(A-B,C-B)/(norm(A-B)*norm(C-B)),-1,1)))",
+    "units": "degrees",
+    "definitions_validated": false,
+    "representation": "estimated_3d",
+    "shape": [
+      79,
+      8
+    ],
+    "file": "2024-usopen-1164_pt0004_srv1_angles.npy",
+    "provenance": "Recomputed with local provisional H36M triplets; equivalence to upstream angle files unverified"
+  },
+  "timestamps": {
+    "status": "unavailable",
+    "units": "seconds",
+    "shape": [
+      79
+    ],
+    "file": "2024-usopen-1164_pt0004_srv1_timestamps.npy"
+  },
+  "joint_confidence": {
+    "kind": "unavailable",
+    "shape": [
+      79,
+      17
+    ],
+    "file": "2024-usopen-1164_pt0004_srv1_confidence.npy",
+    "score_definition": null
+  },
+  "events": {
+    "max_knee_flexion": {
+      "frame": 42,
+      "timestamp": null,
+      "confidence": null,
+      "method": "five_frame_smoothed_bilateral_interior_angle_minimum_15_to_70_percent",
+      "definition_id": "djoker-knee-proxy-v1",
+      "status": "estimated"
+    },
+    "highest_right_wrist": {
+      "frame": 67,
+      "timestamp": null,
+      "confidence": null,
+      "method": "five_frame_smoothed_z_maximum_after_knee",
+      "definition_id": "djoker-wrist-height-proxy-v1",
+      "status": "estimated"
+    },
+    "contact": null,
+    "racket_drop": null
+  },
+  "provenance": {
+    "source_filename": "2024-usopen-1164_pt0004_srv1.npy",
+    "source_sha256": "e85c0d5919703e86f6e4854017bb377c87461ccc9a4974b5488b5e67fa085a2f",
+    "upstream_commit": "7889457cc9b50b0c2a9fdcc81d786bcdb6b8652c",
+    "quality_flags": [
+      "angle_jump_over_40deg_per_frame"
+    ]
+  }
+}

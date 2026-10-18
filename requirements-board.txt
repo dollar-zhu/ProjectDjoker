@@ -1,0 +1,4 @@
+# Board runtime dependencies (aarch64 wheels exist for Python 3.10-3.13; see docs/board-port.md)
+numpy>=1.26
+opencv-python-headless>=4.8
+onnxruntime>=1.17

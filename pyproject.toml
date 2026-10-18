@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "djoker"
+version = "0.1.0"
+description = "Offline 2D serve coach: RTMPose skeletons, DMS v0.1 packets, Djokovic-referenced rules, spoken feedback"
+requires-python = ">=3.10"
+license = {text = "Code: unlicensed (see README). Dataset-derived reference: CC BY 4.0 (DATA_LICENSE)."}
+# Board runtime only. Reference building, plots and dataset analysis need the [dev] extra.
+dependencies = [
+  "numpy>=1.26",
+  "opencv-python-headless>=4.8",
+  "onnxruntime>=1.17",
+]
+
+[project.optional-dependencies]
+dev = ["pandas>=2.2", "pyarrow>=15", "matplotlib>=3.8"]
+
+[project.scripts]
+djoker-run = "live.runner:main"
+djoker-check = "live.check:main"
+djoker-feedback = "coaching.board_feedback:main"
+djoker-pose-video = "pose2d.video:main"
+djoker-compare = "compare2d.compare:main"
+djoker-build-reference = "compare2d.reference:main"
+
+[tool.setuptools]
+packages = ["dms", "pose2d", "compare2d", "coaching", "live"]
+
+[tool.setuptools.package-data]
+coaching = ["rules.json", "rating.json"]

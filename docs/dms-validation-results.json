@@ -1,0 +1,28 @@
+{
+  "packets_validated": 88,
+  "mapping_validated": false,
+  "tests_passed": 10,
+  "comparison": {
+    "comparable": false,
+    "reason": "Anatomical mapping is not validated",
+    "reasons": [
+      "Anatomical mapping is not validated",
+      "Anatomical angle definitions are not validated",
+      "Handedness differs or is unknown; no automatic mirroring",
+      "Incompatible or unknown coordinate_system",
+      "Incompatible or unknown axis_convention",
+      "Incompatible or unknown units",
+      "Coordinate metric compatibility is unverified",
+      "No shared validated camera/coordinate comparison profile",
+      "Camera perspectives differ or are unknown",
+      "left: event is estimated, not validated",
+      "left: inadequate event confidence",
+      "left: tracking confidence is unavailable or only availability was supplied",
+      "left: inadequate tracking confidence for selected joints",
+      "right: event is estimated, not validated",
+      "right: inadequate event confidence",
+      "right: tracking confidence is unavailable or only availability was supplied",
+      "right: inadequate tracking confidence for selected joints"
+    ]
+  }
+}
