@@ -56,7 +56,10 @@ def build(cfg):
     engine = FeedbackEngine(ref['table'], ref['rules'], ana.get('serve_type', 'unknown'), ref.get('allow_unvalidated_reference', False),
                             rating=ref.get('rating'))
     phraser = make_phraser(cfg.get('phraser'))
-    aud = cfg.get('audio', {}); speaker = Speaker(aud.get('backend', 'print'), aud.get('wav_dir', 'audio'), aud.get('voice'))
+    aud = cfg.get('audio', {})
+    from .bluetooth import BluetoothRoute
+    route = BluetoothRoute(aud['bluetooth_address']) if aud.get('bluetooth_address') else None
+    speaker = Speaker(aud.get('backend', 'print'), aud.get('wav_dir', 'audio'), aud.get('voice'), route=route)
     cooldown = 0.0 if is_file and not src.get('realtime') else ses.get('cooldown_s', 2.0)
     session = Session(source.label, estimator, engine, phraser, speaker, ses.get('out_dir', 'runs'),
                       window_s=ana.get('window_s', 4.0), min_frames=ana.get('min_frames', 15),
