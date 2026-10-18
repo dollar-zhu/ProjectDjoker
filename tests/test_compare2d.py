@@ -4,7 +4,7 @@ import unittest
 from pathlib import Path
 import numpy as np
 from dms.contract import export_canonical
-from compare2d.serve2d import detect_events, estimate_yaw, hip_width_ratio
+from compare2d.serve2d import detect_events, estimate_yaw, hip_width_ratio, serve_metrics
 from compare2d.reference import project, unmirror, chirality, to_canonical, YAWS
 from compare2d.compare import compare
 
@@ -42,6 +42,14 @@ class Events(unittest.TestCase):
         self.assertEqual(load, 25)
         self.assertEqual(reach, 40)
         self.assertEqual(flags, [])
+
+    def test_front_knee_hidden_after_load_reports_no_drive_speed_not_nan(self):
+        t, pose = synthetic_serve(); t = np.arange(len(t)) / 20  # live analysis rate
+        load, *_ = detect_events(t, pose)
+        pose[load + 1:load + 10, 13] = np.nan
+        metrics = serve_metrics(t, pose)
+        self.assertIsNone(metrics['values']['front_knee_drive_speed'])
+        json.dumps(metrics['values'], allow_nan=False)
 
     def test_no_complete_knee_pair_returns_unavailable(self):
         t, pose = synthetic_serve()

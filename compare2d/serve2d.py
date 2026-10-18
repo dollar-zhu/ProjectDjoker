@@ -96,7 +96,7 @@ def serve_metrics(times, pose2d):
         'front_knee_at_load': float(angles[load, 2]), 'back_knee_at_load': float(angles[load, 3]),
         'bend_duration': float(times[load] - times[start]),
         'extend_duration': float(times[load + up[0]] - times[load]) if len(up) else None,
-        'front_knee_drive_speed': float(np.nanmax(drive[window])) if window.any() else None,
+        'front_knee_drive_speed': float(np.nanmax(drive[window])) if np.isfinite(drive[window]).any() else None,
         'load_to_reach': float(times[reach] - times[load]), **arm_metrics(times, smooth(times, pose2d), angles, load, reach)}}
 
 def arm_metrics(times, s, angles, load, reach):
