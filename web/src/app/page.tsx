@@ -3,7 +3,7 @@ import {useEffect,useRef,useState,useCallback,PointerEvent} from 'react';
 import {ReferenceReview} from '@/components/reference-review';
 import {LiveCapture} from '@/components/live-capture';
 import {alignedReference,REFERENCE_BONES,type ReferenceOverlay} from '@/lib/overlay';
-import {phaseAt} from '@/lib/reference';
+import {referencePhaseAt,referencePoseAt} from '@/lib/motion-similarity';
 import {frameAt,stagePlayback,type Stage} from '@/lib/playback';
 import {MovementTimeline,MovementInsight} from '@/components/movement-review';
 import type {Options} from '@/lib/contracts';
@@ -52,8 +52,9 @@ export default function Home(){
      ctx.fillStyle='rgba(6,24,20,.45)';ctx.beginPath();ctx.rect(0,0,c.width,c.height);ctx.rect(x1,y1,x2-x1,y2-y1);ctx.fill('evenodd');ctx.strokeStyle='#d3ff9b';ctx.lineWidth=3;ctx.strokeRect(x1,y1,x2-x1,y2-y1);
     }
     if(result&&referenceOverlay){
-     const phase=phaseAt(v.currentTime,job?.meta?.duration||0,result.events),tracked=frameAt(result.frames,v.currentTime);
-     const ghost=phase!==null&&tracked?alignedReference(referenceOverlay.poses[Math.round(phase)],tracked,referenceOverlay.fit):null;
+     const phase=referencePhaseAt(referenceOverlay.alignment,v.currentTime),tracked=frameAt(result.frames,v.currentTime);
+     const referencePose=phase===null?null:referencePoseAt(referenceOverlay.poses,phase);
+     const ghost=referencePose&&tracked?alignedReference(referencePose,tracked,referenceOverlay.fit):null;
      if(ghost){ctx.save();ctx.shadowColor='rgba(0,25,45,.9)';ctx.shadowBlur=3;ctx.strokeStyle='#66c9ff';ctx.fillStyle='#66c9ff';ctx.lineWidth=Math.max(3,c.width/330);ctx.setLineDash([c.width/150,c.width/250]);
       for(const[a,b]of REFERENCE_BONES){ctx.beginPath();ctx.moveTo(...ghost[a] as [number,number]);ctx.lineTo(...ghost[b] as [number,number]);ctx.stroke();}
       ctx.setLineDash([]);ghost.forEach(([x,y])=>{ctx.beginPath();ctx.arc(x,y,c.width/240,0,Math.PI*2);ctx.fill();});ctx.restore();
@@ -79,7 +80,7 @@ export default function Home(){
   stageEnd.current=null;setReferenceOverlay(next);const v=video.current;
   if(!next){if(v)v.playbackRate=1;setRate('1');return;}
   setOverlay(true);
-  if(play&&v){const load=result?.events.find(e=>e.id==='loading')?.time||0;v.currentTime=Math.max(0,load-.35);v.playbackRate=.25;setRate('.25');setTime(v.currentTime);v.play().catch(e=>setError(e.message));v.scrollIntoView({behavior:'smooth',block:'center'});}
+  if(play&&v){v.currentTime=next.alignment[0].time;stageEnd.current=next.alignment.at(-1)!.time;v.playbackRate=.25;setRate('.25');setTime(v.currentTime);v.play().catch(e=>setError(e.message));v.scrollIntoView({behavior:'smooth',block:'center'});}
  },[result]);
  function replayStage(stage:Stage){const range=stagePlayback(stage,job?.meta?.duration||0),v=video.current;if(!range||!v)return;stageEnd.current=range.end;v.currentTime=range.start;v.playbackRate=range.rate;setRate('.25');setTime(range.start);setActive(stage.id);v.play().catch(e=>setError(e.message));v.scrollIntoView({behavior:'smooth',block:'center'});}
  function seek(t:number,marker=''){stageEnd.current=null;if(video.current){video.current.currentTime=t;video.current.pause();setTime(t);setActive(marker);}}
@@ -140,7 +141,7 @@ export default function Home(){
      <input ref={input} id="video-upload" type="file" accept="video/*" className="file-input" aria-label="Upload serve video" onChange={e=>upload(e.target.files?.[0])}/>
      {result?(result.stages?.length?<MovementTimeline stages={result.stages} active={active} onReplay={replayStage} onSelect={setActive}/>:<div className="moments"><div className="section-label">MOMENTS TO REVIEW <span>BODY TRACKING ESTIMATES</span></div>{result.events.length?<div className="moment-list">{result.events.map((m,i)=><button key={m.id} className={`moment ${active===m.id?'active':''}`} onClick={()=>seek(m.time,m.id)}><span className="moment-number">0{i+1}</span><span><strong>{m.label}</strong><small>{clock(m.time)}</small></span><span>↗</span></button>)}</div>:<p className="muted">No reliable phase markers for this recording. You can still inspect the video and skeleton.</p>}{moment&&<p className="moment-detail">{moment.detail}</p>}</div>):<div className="sample-section"><div className="section-label">OR EXPLORE A SAMPLE <span>REAL RECORDINGS</span></div><div className="sample-list">{health?.samples.map((s,i)=><button key={s.id} disabled={uploading||working} onClick={()=>upload(undefined,s.id)}><span className="sample-number">0{i+1}</span><strong>{s.name}</strong><small>{s.label}</small><span className="sample-arrow">↗</span></button>)}</div></div>}
     </section>
-    {result&&job?.meta&&<ReferenceReview key={job.id} view={job.options?.view||job.view} time={time} duration={job.meta.duration} events={result.events} frames={result.frames} overlayActive={!!referenceOverlay} onOverlayChange={changeReferenceOverlay}/>}
+    {result&&job?.meta&&<ReferenceReview key={job.id} view={job.options?.view||job.view} handedness={job.options?.handedness||'unknown'} duration={job.meta.duration} events={result.events} frames={result.frames} stages={result.stages} overlayActive={!!referenceOverlay} onOverlayChange={changeReferenceOverlay}/>}
    </div>
    <footer><span><i/> Processed locally. Your video stays on your devices.</span><span>Practice. Review. Repeat.</span></footer>
   </main>

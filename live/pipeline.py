@@ -7,7 +7,7 @@
      "reference":{"table": "<board_reference.json>", "rules": "<rules.json>", "rating": "<rating.json>",
                   "allow_unvalidated_reference": false},
      "phraser":  {"backend": "canonical" | "qwen", "url": "...", "model": "...", "timeout_s": 1.0},
-     "audio":    {"backend": "print" | "say" | "espeak" | "wav", "wav_dir": "<audio dir>"},
+     "audio":    {"backend": "print" | "piper" | "say" | "espeak" | "wav", "wav_dir": "<audio dir>", "voice": "<piper .onnx>"},
      "session":  {"cooldown_s": 2.0, "out_dir": "runs"}}
 """
 import copy
@@ -22,7 +22,7 @@ from coaching.board_feedback import FeedbackEngine
 from coaching.phraser import make_phraser
 
 PATH_KEYS = {('pose', 'cache'), ('pose', 'model_dir'), ('reference', 'table'), ('reference', 'rules'), ('reference', 'rating'),
-             ('audio', 'wav_dir'), ('session', 'out_dir'), ('check', 'golden_dir')}
+             ('audio', 'wav_dir'), ('audio', 'voice'), ('session', 'out_dir'), ('check', 'golden_dir')}
 
 def load_config(path, overrides=None):
     path = Path(path).resolve(); cfg = json.loads(path.read_text())
@@ -56,7 +56,10 @@ def build(cfg):
     engine = FeedbackEngine(ref['table'], ref['rules'], ana.get('serve_type', 'unknown'), ref.get('allow_unvalidated_reference', False),
                             rating=ref.get('rating'))
     phraser = make_phraser(cfg.get('phraser'))
-    speaker = Speaker(cfg.get('audio', {}).get('backend', 'print'), cfg.get('audio', {}).get('wav_dir', 'audio'))
+    aud = cfg.get('audio', {})
+    from .bluetooth import BluetoothRoute
+    route = BluetoothRoute(aud['bluetooth_address']) if aud.get('bluetooth_address') else None
+    speaker = Speaker(aud.get('backend', 'print'), aud.get('wav_dir', 'audio'), aud.get('voice'), route=route)
     cooldown = 0.0 if is_file and not src.get('realtime') else ses.get('cooldown_s', 2.0)
     session = Session(source.label, estimator, engine, phraser, speaker, ses.get('out_dir', 'runs'),
                       window_s=ana.get('window_s', 4.0), min_frames=ana.get('min_frames', 15),
