@@ -20,6 +20,9 @@ from capture import ServeCapture, ReadyServeCapture, ManualCapture, PlayerCrop, 
 from pose import crop_input, decode
 from worker import ONNX, prepare, process, update
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from audio_bridge import AudioBridge
+
 BONES = [(5,6),(5,7),(7,9),(6,8),(8,10),(5,11),(6,12),(11,12),(11,13),(13,15),(12,14),(14,16)]
 
 
@@ -124,10 +127,17 @@ class BoardCamera:
     """Latest-frame buffer: an inference delay never builds a stale preview queue."""
     def __init__(self, log):
         serial = os.environ.get('DJOKER_SERIAL', '242692658')
-        self.proc = subprocess.Popen(['adb','-s',serial,'exec-out',
-            'ffmpeg -nostdin -hide_banner -loglevel error -f v4l2 -input_format mjpeg '
-            '-framerate 30 -video_size 640x480 -i /dev/video0 '
-            '-an -c:v copy -f mjpeg -flush_packets 1 pipe:1'], stdout=subprocess.PIPE, stderr=log)
+        if os.environ.get('DJOKER_CAMERA_SOURCE') == 'local':
+            command = ['ffmpeg', '-nostdin', '-hide_banner', '-loglevel', 'error',
+                       '-f', 'v4l2', '-input_format', 'mjpeg', '-framerate', '30',
+                       '-video_size', '640x480', '-i', os.environ.get('DJOKER_CAMERA_DEVICE', '/dev/video0'),
+                       '-an', '-c:v', 'copy', '-f', 'mjpeg', '-flush_packets', '1', 'pipe:1']
+        else:
+            command = ['adb','-s',serial,'exec-out',
+                'ffmpeg -nostdin -hide_banner -loglevel error -f v4l2 -input_format mjpeg '
+                '-framerate 30 -video_size 640x480 -i /dev/video0 '
+                '-an -c:v copy -f mjpeg -flush_packets 1 pipe:1']
+        self.proc = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=log)
         self.latest = None
         self.lock = threading.Lock()
         self.thread = threading.Thread(target=self._read, daemon=True)
@@ -180,9 +190,15 @@ def run(root, options):
         def status(**fields):
             state.update(fields, updated=time.time())
             temp=live/'status.tmp';temp.write_text(json.dumps(state));temp.replace(live/'status.json')
-        camera = recorder = None
+        camera = recorder = audio = None
         try:
             status()
+            try:
+                audio = AudioBridge(live)
+                status(session_id=audio.session_id)
+            except Exception as exc:
+                status(audio_error=f'Audio unavailable; camera remains enabled: {exc}')
+            frame_id = 0
             if not ONNX.exists():
                 raise RuntimeError('Live tracking needs the local wholebody ONNX model (DJOKER_ONNX).')
             import onnxruntime as ort
@@ -227,6 +243,10 @@ def run(root, options):
                     observed[~visible]=np.nan
                     if not (x1<=center[0]<=x2 and y1<=center[1]<=y2):
                         observed[:]=np.nan
+                    frame_id += 1
+                    if audio:
+                        audio.ingest(frame_id, stamp, observed, scores, 640, 480, options['view'],
+                                     moving=bool(present and (overhead or not lowered)))
                     player_crop.update(stamp,xy,present,640,480)
                     auto_event=(detector.update(stamp,present,overhead,lowered) if manual
                                 else detector.update(stamp,present,overhead,lowered,ready,pose=observed))
@@ -304,6 +324,7 @@ def run(root, options):
             traceback.print_exc()
             status(state='error',message=str(exc))
         finally:
+            if audio: audio.close()
             if recorder:
                 recorder.close()
                 if manual:

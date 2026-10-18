@@ -1,6 +1,7 @@
 'use client';
 import {useEffect,useRef,useState} from 'react';
 import type {Options} from '@/lib/contracts';
+import {LiveAudio} from './live-audio';
 
 type Live={active:boolean;state:string;message:string;elapsed?:number;jobId?:string;updated?:number;mode?:'auto'|'manual';countdown?:number|null;readyProgress?:number};
 export function CaptureCue({live}:{live:Omit<Live,'message'>}){
@@ -14,6 +15,7 @@ export function LiveCapture({onReview}:{onReview:(id:string)=>void}){
  const [live,setLive]=useState<Live>({active:false,state:'stopped',message:'Camera is off.'});
  const [busy,setBusy]=useState(false),[error,setError]=useState(''),[frame,setFrame]=useState('');
  const [mode,setMode]=useState<'auto'|'manual'>('auto');
+ const [audioStopped,setAudioStopped]=useState(false);
  const [view,setView]=useState<Options['view']>('rear');
  const delivered=useRef<string|undefined>(undefined),callback=useRef(onReview);
  useEffect(()=>{callback.current=onReview;},[onReview]);
@@ -32,11 +34,13 @@ export function LiveCapture({onReview}:{onReview:(id:string)=>void}){
   poll();return()=>{ended=true;clearTimeout(timer);};
  },[]);
  async function control(action:'start'|'stop'|'record'|'finish'){
+  if(action==='stop')setAudioStopped(true);
+  if(action==='start')setAudioStopped(false);
   setBusy(true);setError('');
   try{
    const r=await fetch('/api/live',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action,mode,options:{crop:[0,0,1,1],view,handedness:'right'}})});
    const s=await r.json();if(!r.ok)throw Error(s.error||'Live capture is already running.');setLive(s);
-  }catch(e){setError((e as Error).message);}finally{setBusy(false);}
+  }catch(e){setError((e as Error).message);if(action==='stop')setAudioStopped(false);}finally{setBusy(false);}
  }
  return <section className="live-panel panel" aria-label="Ventuno live capture">
   <div className="panel-head"><div><span className="eyebrow">VENTUNO WEBCAM</span><h2>Serve. We’ll catch it.</h2></div><span className={`pill ${live.state==='recording'?'amber':''}`}>{live.state.toUpperCase()}{live.state==='recording'?` · ${live.elapsed?.toFixed(1)||'0.0'}s`:''}</span></div>
@@ -49,6 +53,7 @@ export function LiveCapture({onReview}:{onReview:(id:string)=>void}){
     {live.active&&live.mode==='manual'&&<button className="primary" disabled={busy||!['ready','recording'].includes(live.state)} onClick={()=>control(live.state==='recording'?'finish':'record')}>{live.state==='recording'?'Stop & analyse':live.state==='processing'?'Analysing…':'Start recording'} <span>{live.state==='recording'?'■':'●'}</span></button>}
     <button className="primary" disabled={busy} onClick={()=>control(live.active?'stop':'start')}>{busy?'Please wait…':live.active?'Stop camera':'Start camera'} <span>{live.active?'■':'↗'}</span></button>
     {error&&<div className="error" role="alert">{error}</div>}
+    <LiveAudio active={live.active&&!audioStopped}/>
     <p className="small muted">Right-handed serves only. Live tracking runs on this Mac; saved clips use the existing Ventuno analysis. Motion completion is an estimate, not detected ball contact. Capture pauses while preparing each review.</p>
    </div>
   </div>

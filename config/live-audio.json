@@ -1,0 +1,24 @@
+{
+  "audio": {
+    "backend": "piper",
+    "voice": "../models/piper/en_US-joe-medium.onnx",
+    "wav_dir": "../audio",
+    "bluetooth_address": null
+  },
+  "phraser": {
+    "backend": "canonical",
+    "url": "http://127.0.0.1:11434/v1/chat/completions",
+    "model": "qwen2.5:1.5b-instruct",
+    "timeout_s": 1.0
+  },
+  "asr": {
+    "model": "../models/faster-whisper-tiny.en"
+  },
+  "conversation": {
+    "persona": false,
+    "cooldown_s": 12.0
+  },
+  "led": {
+    "backend": "browser"
+  }
+}
