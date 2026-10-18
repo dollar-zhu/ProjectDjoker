@@ -3,7 +3,6 @@
 No service or packages are installed on the board. The adb-owned ffmpeg process
 closes with the pipe. Only a completed estimated serve enters the review queue.
 """
-from collections import deque
 import fcntl
 import json
 import os
@@ -17,7 +16,7 @@ import uuid
 
 import cv2
 import numpy as np
-from capture import ServeCapture, ManualCapture, PlayerCrop, pose_signal
+from capture import ServeCapture, ReadyServeCapture, ManualCapture, PlayerCrop, pose_signal, ready_pose
 from pose import crop_input, decode
 from worker import ONNX, prepare, process, update
 
@@ -193,7 +192,8 @@ def run(root, options):
                 raise ValueError('Live tracking needs the wholebody RTMPose model.')
             with open(live/'camera.log','ab') as log:
                 camera=BoardCamera(log)
-                detector=ServeCapture();player_crop=PlayerCrop(options['crop']);buffer=deque();last=time.monotonic();message='Step into the player area with your whole body visible.'
+                detector=ServeCapture() if manual else ReadyServeCapture(options['handedness'])
+                player_crop=PlayerCrop(options['crop']);last=time.monotonic();message='Step into the player area with your whole body visible.'
                 clip=live/'capture.avi'
                 while not (live/'stop').exists():
                     frame=camera.read()
@@ -206,7 +206,7 @@ def run(root, options):
                     # A long transport/processing gap invalidates motion continuity.
                     if stamp-last>.5 and recorder and not manual:
                         recorder.close();recorder=None;clip.unlink(missing_ok=True)
-                        detector=ServeCapture();buffer.clear()
+                        detector.cancel()
                         message='Tracking paused. Start a fresh serve.'
                     last=stamp
                     tick=time.monotonic()
@@ -220,11 +220,16 @@ def run(root, options):
                     x1,y1,x2,y2=np.asarray(options['crop'])*[640,480,640,480]
                     center=xy[11:13].mean(0)
                     present=present and x1<=center[0]<=x2 and y1<=center[1]<=y2
+                    ready=present and ready_pose(xy,scores,640,480)
+                    observed=xy.copy()
+                    visible=(np.isfinite(xy).all(1)&np.isfinite(scores)&(scores>=.5)
+                             &(xy[:,0]>=0)&(xy[:,0]<640)&(xy[:,1]>=0)&(xy[:,1]<480))
+                    observed[~visible]=np.nan
+                    if not (x1<=center[0]<=x2 and y1<=center[1]<=y2):
+                        observed[:]=np.nan
                     player_crop.update(stamp,xy,present,640,480)
-                    buffer.append((stamp,image))
-                    while buffer and stamp-buffer[0][0]>.75:
-                        buffer.popleft()
-                    auto_event=detector.update(stamp,present,overhead,lowered)
+                    auto_event=(detector.update(stamp,present,overhead,lowered) if manual
+                                else detector.update(stamp,present,overhead,lowered,ready,pose=observed))
                     command=None
                     if manual and (live/'command.json').exists():
                         command=json.loads((live/'command.json').read_text())['action']
@@ -232,10 +237,7 @@ def run(root, options):
                     event=gate.update(stamp,command) if manual else auto_event
                     if event=='start':
                         recorder=TimedRecording(clip,(640,480),30 if manual else 15)
-                        if manual:
-                            recorder.add(stamp,image)
-                        else:
-                            for t,img in buffer: recorder.add(t,img)
+                        recorder.add(stamp,image)
                         trace=[]
                         message='Manual recording · tracking loss will not stop this clip.' if manual else 'Recording · serve when ready.'
                     elif recorder:
@@ -243,6 +245,8 @@ def run(root, options):
                     if recorder:
                         trace.append({'time':round(stamp-recorder.start,4),'present':bool(present),
                             'overhead':bool(overhead),'lowered':bool(lowered),'auto_state':detector.state,
+                            'ready':bool(ready),
+                            'finish_evidence':{} if manual else dict(detector.finish.evidence),
                             'auto_event':auto_event,'crop':inference_crop,'xy':np.nan_to_num(xy).tolist(),
                             'scores':np.nan_to_num(scores).tolist()})
                     if event in ('complete','discard') and recorder:
@@ -251,8 +255,8 @@ def run(root, options):
                             clip.unlink(missing_ok=True)
                             message='Attempt discarded: tracking lost or no complete motion within 18 seconds.'
                         else:
-                            status(state='processing',message='Serve captured. Preparing your review…')
-                            job_id=save_review(root,clip,options,gate.completion if manual else 'estimated_overhead_then_followthrough',trace)
+                            status(state='processing',message='Serve captured. Preparing your review…',countdown=None,readyProgress=0)
+                            job_id=save_review(root,clip,options,gate.completion if manual else 'observed_reach_descent_recovery',trace)
                             status(jobId=job_id)
                             # Same worker, NPU backend and strict feedback gates as uploaded clips.
                             try:
@@ -261,8 +265,12 @@ def run(root, options):
                             except Exception as exc:
                                 update(root/job_id,status='failed',stage='Processing stopped',error=str(exc))
                                 message='Review failed. Open the saved clip to retry. '+str(exc)[-200:]
-                            detector=ServeCapture();detector.state='cooldown';detector.cooldown_until=time.monotonic()+2
-                            buffer.clear();last=time.monotonic()
+                            if manual:
+                                detector=ServeCapture();detector.state='cooldown';detector.cooldown_until=time.monotonic()+2
+                            else:
+                                # Keep release/rearm state across the review processing pause.
+                                detector.motion.cooldown_until=time.monotonic()+2
+                            last=time.monotonic()
                     preview=image.copy()
                     cv2.rectangle(preview,(int(x1),int(y1)),(int(x2),int(y2)),(190,235,160),2)
                     for a,b in BONES:
@@ -275,11 +283,23 @@ def run(root, options):
                         temp=live/'preview.tmp';temp.write_bytes(jpeg.tobytes());temp.replace(live/'preview.jpg')
                     if manual and gate.state=='ready' and not state.get('jobId'):
                         message='Camera ready. Click Start recording, then perform one serve.'
-                    if not manual and detector.state=='waiting' and not present:
-                        message='Step into the player area with your whole body visible.'
+                    if not manual and detector.state=='waiting':
+                        if not present:
+                            message='Step into the player area with your whole body visible.'
+                        elif not detector.armed:
+                            message='Lower your hand, then raise it to shoulder height for another attempt.'
+                        elif ready:
+                            message='Hold your hand at shoulder height…'
+                        else:
+                            message='Raise either hand to shoulder height and hold briefly to begin.'
+                    if not manual and detector.state=='countdown':
+                        message='Get ready to serve…' if present else 'Keep your whole body visible.'
                     if not manual and recorder and detector.saw_overhead:
                         message='Recording · waiting for the follow-through.'
-                    status(state=gate.state if manual else detector.state,message=message,present=bool(present),inference_ms=round(inference_ms,1),frame_to_preview_ms=round((time.monotonic()-stamp)*1000,1),elapsed=round(stamp-(gate.started if manual else detector.started),1) if recorder else 0)
+                    status(state=gate.state if manual else detector.state,message=message,present=bool(present),
+                           ready=bool(ready),countdown=None if manual else detector.countdown,
+                           readyProgress=0 if manual else round(detector.ready_progress,3),
+                           inference_ms=round(inference_ms,1),frame_to_preview_ms=round((time.monotonic()-stamp)*1000,1),elapsed=round(stamp-(gate.started if manual else detector.started),1) if recorder else 0)
         except Exception as exc:
             traceback.print_exc()
             status(state='error',message=str(exc))

@@ -4,6 +4,25 @@ __pycache__/
 .DS_Store
 .mplconfig/
 *.part
+
+# model exports / intermediate tensors (regenerable; see demo/ventuno-pose/et/README.md)
+*.pte
+*.pt
+*.pt2
+*.onnx
+*.etdp
+*.bin
+*.raw
+*.npy
+*.mp4
+.venv-et/
+demo/ventuno-pose/et/onnx/
+demo/ventuno-pose/et/calib/
+demo/ventuno-pose/et/eval_work/
+demo/ventuno-pose/et/out_qnn/
+demo/ventuno-pose/proof/out_*/
+demo/ventuno-pose/proof/frames/
+demo/ventuno-pose/sheet.png
 dms-reference/
 
 # Riptide artifacts (cloud-synced)

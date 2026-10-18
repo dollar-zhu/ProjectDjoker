@@ -6,8 +6,9 @@ Missing joints/gaps abstain per stage; no interpolation across occlusions.
 import numpy as np
 from compare2d.serve2d import smooth
 from dms.contract import interior_angles
+from capture import MotionFinish
 
-VERSION='body-stages-v1'
+VERSION='body-stages-v2'
 STAGES=[('setup','Setup'),('toss','Tossing-arm rise'),('loading','Loading'),
         ('acceleration','Upward swing / reach'),('follow_through','Follow-through'),('finish','Finish / recovery')]
 
@@ -27,7 +28,6 @@ def movement_stages(times,pose,load,reach,offset=0):
     # Never let smoothing turn a missing joint into observed evidence.
     s[~np.isfinite(p)]=np.nan
     shoulders=s[:,[5,6]].mean(1)
-    wrist=(shoulders[:,1]-s[:,10,1])/scale
     toss=(shoulders[:,1]-s[:,9,1])/scale
     max_gap=max(.12,1.6*float(np.median(np.diff(t))))
 
@@ -96,28 +96,28 @@ def movement_stages(times,pose,load,reach,offset=0):
     else:
         output['acceleration']['detail']='Loading and reach are visible, but intervening tracking is incomplete. Their timing does not establish the swing path.'
 
-    follow_end=None
-    for b in range(reach+1,n):
-        if t[b]-t[reach]>2: break
-        if not visible(reach,b,[5,6,10]): break
-        if wrist[reach]-wrist[b]>=.4 and wrist[b]<.5 and t[b]-t[reach]>=.08:
-            follow_end=b
-            drop=float(wrist[reach]-wrist[b])
-            emit('follow_through',reach,b,b,'Visible hitting-arm descent after reach. Does not measure deceleration forces or pronation.',
-                 'The hitting wrist lowers after the overhead reach in the visible follow-through.',
-                 'Replay the downward arm path and watch whether tracking follows the arm throughout.',
-                 {'wrist_descent_torso_lengths':round(drop,2)})
-            break
-    if follow_end is not None:
-        for a in range(follow_end+1,n):
-            b=int(np.searchsorted(t,t[a]+.3))
-            if b>=n: break
-            if not visible(a,b,[5,6,10,11,12,15,16]): continue
-            movement=float(np.max(np.ptp(s[a:b+1,[5,6,10,11,12,15,16]],axis=0))/scale)
-            if movement>.12: continue
-            emit('finish',a,b,a,'Relatively settled body and arm after follow-through. Landing and foot-ground contact are not established.',
-                 'A relatively settled recovery position is visible after the arm lowers.',
-                 'Review the recovery position and feet at the end of the movement.',
-                 {'visible_motion_torso_lengths':round(movement,2)})
+    # Match live capture: wrist occlusion does not erase a visible elbow/body
+    # recovery. Every cue is computed from confidence-masked observed joints.
+    recovery = MotionFinish()
+    follow_end = None
+    begin = max(load, int(np.searchsorted(t, t[reach]-.4)))
+    for b in range(begin, n):
+        event = recovery.update(float(t[b]), p[b])
+        if b <= reach:
+            continue
+        if event == 'descent':
+            follow_end = b
+            elbow_only = 'wrist_descent_torso_lengths' not in recovery.evidence
+            observation = ('The hitting elbow lowers after reach while the visible torso moves into recovery; the wrist is occluded.'
+                           if elbow_only else 'The hitting arm lowers after the overhead reach, supported by observed wrist or elbow positions.')
+            emit('follow_through',reach,b,b,
+                 'Observed arm descent after reach. Missing wrist samples are not interpolated; visible elbow and torso recovery can establish this stage.',
+                 observation,
+                 'Replay reach into the descending arm and body recovery.', dict(recovery.evidence))
+        elif event == 'complete' and follow_end is not None:
+            emit('finish',follow_end,b,b,
+                 'Observed downward arm movement and recovery after reach. Complete stillness, landing and foot-ground contact are not required or established.',
+                 'The downward arm sequence has continued into visible recovery after the reach.',
+                 'Review the recovered arm and body position at the end of the motion.', dict(recovery.evidence))
             break
     return list(output.values())
