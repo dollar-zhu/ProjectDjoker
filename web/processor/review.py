@@ -8,6 +8,7 @@ sys.path.insert(0,str(ROOT))
 from dms.contract import export_canonical
 from compare2d.serve2d import serve_metrics
 from coaching.board_feedback import decide
+from stages import movement_stages
 
 
 def retry(reason):
@@ -17,7 +18,7 @@ def retry(reason):
             'uncertainty':'No technique judgement was made.'}}
 
 
-def review(directory,times,pose,scores,view,handedness,image_size):
+def review(directory,times,pose,scores,view,handedness,image_size,crop_mode='fixed_operator'):
     times=np.asarray(times,float);pose=np.asarray(pose,float);scores=np.asarray(scores,float)
     if len(times)<2 or not np.isfinite(times).all() or not (np.diff(times)>0).all():
         raise ValueError('Timestamps must increase strictly.')
@@ -29,6 +30,12 @@ def review(directory,times,pose,scores,view,handedness,image_size):
     visible=np.isfinite(pose).all(2)&np.isfinite(scores)&(scores>=.5)
     w,h=image_size
     visible &= (pose[:,:,0]>=0)&(pose[:,:,0]<w)&(pose[:,:,1]>=0)&(pose[:,:,1]<h)
+    # Manual recordings include the walk to/from the record button. Evaluate
+    # the full-body interval, retaining original video timestamps and indices.
+    body_frames=np.flatnonzero(visible[:,required].all(1))
+    offset=int(body_frames[0]) if len(body_frames) else 0
+    end=int(body_frames[-1])+1 if len(body_frames) else len(times)
+    times,pose,scores,visible=times[offset:end],pose[offset:end],scores[offset:end],visible[offset:end]
     if len(times)<15 or np.mean(visible[:,required].all(1))<.7:
         return retry('Too many shoulders or leg joints are unclear. Check the player box and camera framing.')
     if visible[:,10].sum()<5:
@@ -47,9 +54,9 @@ def review(directory,times,pose,scores,view,handedness,image_size):
     source={'model':'rtmpose-m-wholebody-qnn-fp16','coordinate_system':'image_2d',
             'camera_view':view,'fps':None,'axis_convention':'x_right_y_down','units':'pixels',
             'metric_space':True,'image_size':image_size,'comparison_profile_id':None,
-            'runtime':'ExecuTorch QNN on Ventuno','crop_mode':'fixed_operator'}
+            'runtime':'ExecuTorch QNN on Ventuno','crop_mode':crop_mode}
     packet=export_canonical(directory/'dms',shot_id=directory.name,player='uploaded_player',handedness=handedness,
-             source=source,pose=masked,timestamps=times,joint_confidence=np.where(visible,np.clip(scores,0,1),np.nan),
+             source=source,pose=masked,timestamps=times-times[0],joint_confidence=np.where(visible,np.clip(scores,0,1),np.nan),
              confidence_kind='tracking_score',score_definition='SimCC minimum xy peak clipped to 0..1; not a probability',
              mapping_evidence='RTMPose COCO wholebody first 17 body joints; web/processor/pose.py model contract',
              events={'max_knee_flexion':None,'contact':None})
@@ -59,8 +66,8 @@ def review(directory,times,pose,scores,view,handedness,image_size):
     vals=fb['metrics']
     fb['observation']=f"At the estimated loading moment, your left knee angle is {vals['front_knee_at_load']:.0f}° and right knee angle {vals['back_knee_at_load']:.0f}° in this view."
     fb['canonical_text']=fb['observation']
-    events=[{'id':'loading','label':'Loading','time':float(times[load]),'frame':int(load),
+    events=[{'id':'loading','label':'Loading','time':float(times[load]),'frame':int(load)+offset,
              'detail':'Estimated deepest knee bend before upward reach. Review the frame; this is not a validated trophy-position label.'},
-            {'id':'reach','label':'Upward reach','time':float(times[reach]),'frame':int(reach),
+            {'id':'reach','label':'Upward reach','time':float(times[reach]),'frame':int(reach)+offset,
              'detail':'Highest tracked hitting wrist. This does not establish ball contact.'}]
-    return {'events':events,'feedback':fb}
+    return {'events':events,'stages':movement_stages(times,masked,load,reach,offset),'feedback':fb,'analysis_window':{'start':float(times[0]),'end':float(times[-1]),'start_frame':offset}}

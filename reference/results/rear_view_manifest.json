@@ -1,0 +1,804 @@
+{
+  "source": "aligned_trajectories.npz",
+  "sha256": "824d513c07685baa40917726d4132b9ce795383a85ec5f7870b4ec02e057894f",
+  "sourceCount": 88,
+  "includedCount": 60,
+  "excludedCount": 28,
+  "method": "One rigid rotation from mean unit hip axis at phases 85..100; rear-view assumption after upward reach.",
+  "minimumCoherence": 0.9,
+  "sourceCameraView": "unknown",
+  "limitation": "Derived rear projections, not a verified subset of original rear-camera recordings.",
+  "records": [
+    {
+      "filename": "2024-usopen-1164_pt0004_srv1.npy",
+      "included": true,
+      "view": "rear",
+      "basis": "post-reach hip axis",
+      "sourceView": "unknown",
+      "coherence": 0.991406,
+      "rotationDegrees": -96.897
+    },
+    {
+      "filename": "2024-usopen-1164_pt0008_srv1.npy",
+      "included": true,
+      "view": "rear",
+      "basis": "post-reach hip axis",
+      "sourceView": "unknown",
+      "coherence": 0.978971,
+      "rotationDegrees": -101.975
+    },
+    {
+      "filename": "2024-usopen-1164_pt0013_srv2.npy",
+      "included": false,
+      "view": "rear",
+      "basis": "post-reach hip axis",
+      "sourceView": "unknown",
+      "coherence": 0.819108,
+      "excluded": "unstable_post_reach_orientation"
+    },
+    {
+      "filename": "2024-usopen-1164_pt0014_srv2.npy",
+      "included": false,
+      "view": "rear",
+      "basis": "post-reach hip axis",
+      "sourceView": "unknown",
+      "coherence": 0.707921,
+      "excluded": "unstable_post_reach_orientation"
+    },
+    {
+      "filename": "2024-usopen-1164_pt0016_srv1.npy",
+      "included": true,
+      "view": "rear",
+      "basis": "post-reach hip axis",
+      "sourceView": "unknown",
+      "coherence": 0.996222,
+      "rotationDegrees": 2.162
+    },
+    {
+      "filename": "2024-usopen-1164_pt0023_srv1.npy",
+      "included": true,
+      "view": "rear",
+      "basis": "post-reach hip axis",
+      "sourceView": "unknown",
+      "coherence": 0.997303,
+      "rotationDegrees": -100.593
+    },
+    {
+      "filename": "2024-usopen-1164_pt0024_srv2.npy",
+      "included": true,
+      "view": "rear",
+      "basis": "post-reach hip axis",
+      "sourceView": "unknown",
+      "coherence": 0.982431,
+      "rotationDegrees": -76.389
+    },
+    {
+      "filename": "2024-usopen-1164_pt0026_srv2.npy",
+      "included": true,
+      "view": "rear",
+      "basis": "post-reach hip axis",
+      "sourceView": "unknown",
+      "coherence": 0.996531,
+      "rotationDegrees": -78.783
+    },
+    {
+      "filename": "2024-usopen-1164_pt0042_srv1.npy",
+      "included": false,
+      "view": "rear",
+      "basis": "post-reach hip axis",
+      "sourceView": "unknown",
+      "coherence": 0.745345,
+      "excluded": "unstable_post_reach_orientation"
+    },
+    {
+      "filename": "2024-usopen-1164_pt0043_srv1.npy",
+      "included": false,
+      "view": "rear",
+      "basis": "post-reach hip axis",
+      "sourceView": "unknown",
+      "coherence": 0.891511,
+      "excluded": "unstable_post_reach_orientation"
+    },
+    {
+      "filename": "2024-usopen-1164_pt0044_srv2.npy",
+      "included": false,
+      "view": "rear",
+      "basis": "post-reach hip axis",
+      "sourceView": "unknown",
+      "coherence": 0.828582,
+      "excluded": "unstable_post_reach_orientation"
+    },
+    {
+      "filename": "2024-usopen-1164_pt0063_srv1.npy",
+      "included": true,
+      "view": "rear",
+      "basis": "post-reach hip axis",
+      "sourceView": "unknown",
+      "coherence": 0.995459,
+      "rotationDegrees": -98.886
+    },
+    {
+      "filename": "2024-usopen-1164_pt0066_srv1.npy",
+      "included": true,
+      "view": "rear",
+      "basis": "post-reach hip axis",
+      "sourceView": "unknown",
+      "coherence": 0.982924,
+      "rotationDegrees": -78.682
+    },
+    {
+      "filename": "2024-usopen-1164_pt0075_srv1.npy",
+      "included": false,
+      "view": "rear",
+      "basis": "post-reach hip axis",
+      "sourceView": "unknown",
+      "coherence": 0.802345,
+      "excluded": "unstable_post_reach_orientation"
+    },
+    {
+      "filename": "2024-usopen-1164_pt0077_srv1.npy",
+      "included": false,
+      "view": "rear",
+      "basis": "post-reach hip axis",
+      "sourceView": "unknown",
+      "coherence": 0.86803,
+      "excluded": "unstable_post_reach_orientation"
+    },
+    {
+      "filename": "2024-usopen-1164_pt0088_srv1.npy",
+      "included": true,
+      "view": "rear",
+      "basis": "post-reach hip axis",
+      "sourceView": "unknown",
+      "coherence": 0.998586,
+      "rotationDegrees": -105.91
+    },
+    {
+      "filename": "2024-usopen-1164_pt0089_srv1.npy",
+      "included": true,
+      "view": "rear",
+      "basis": "post-reach hip axis",
+      "sourceView": "unknown",
+      "coherence": 0.968239,
+      "rotationDegrees": -84.05
+    },
+    {
+      "filename": "2024-usopen-1164_pt0091_srv1.npy",
+      "included": true,
+      "view": "rear",
+      "basis": "post-reach hip axis",
+      "sourceView": "unknown",
+      "coherence": 0.991438,
+      "rotationDegrees": -75.457
+    },
+    {
+      "filename": "2024-usopen-1164_pt0093_srv1.npy",
+      "included": true,
+      "view": "rear",
+      "basis": "post-reach hip axis",
+      "sourceView": "unknown",
+      "coherence": 0.966312,
+      "rotationDegrees": -84.232
+    },
+    {
+      "filename": "2024-usopen-1164_pt0100_srv1.npy",
+      "included": false,
+      "view": "rear",
+      "basis": "post-reach hip axis",
+      "sourceView": "unknown",
+      "coherence": 0.872447,
+      "excluded": "unstable_post_reach_orientation"
+    },
+    {
+      "filename": "2024-usopen-1164_pt0101_srv2.npy",
+      "included": false,
+      "view": "rear",
+      "basis": "post-reach hip axis",
+      "sourceView": "unknown",
+      "coherence": 0.71471,
+      "excluded": "unstable_post_reach_orientation"
+    },
+    {
+      "filename": "2024-usopen-1164_pt0102_srv1.npy",
+      "included": true,
+      "view": "rear",
+      "basis": "post-reach hip axis",
+      "sourceView": "unknown",
+      "coherence": 0.906774,
+      "rotationDegrees": -89.807
+    },
+    {
+      "filename": "2024-usopen-1164_pt0105_srv1.npy",
+      "included": false,
+      "view": "rear",
+      "basis": "post-reach hip axis",
+      "sourceView": "unknown",
+      "coherence": 0.789369,
+      "excluded": "unstable_post_reach_orientation"
+    },
+    {
+      "filename": "2024-usopen-1164_pt0112_srv1.npy",
+      "included": true,
+      "view": "rear",
+      "basis": "post-reach hip axis",
+      "sourceView": "unknown",
+      "coherence": 0.981324,
+      "rotationDegrees": -107.032
+    },
+    {
+      "filename": "2024-usopen-1164_pt0114_srv1.npy",
+      "included": true,
+      "view": "rear",
+      "basis": "post-reach hip axis",
+      "sourceView": "unknown",
+      "coherence": 0.961283,
+      "rotationDegrees": -98.141
+    },
+    {
+      "filename": "2024-usopen-1164_pt0116_srv1.npy",
+      "included": true,
+      "view": "rear",
+      "basis": "post-reach hip axis",
+      "sourceView": "unknown",
+      "coherence": 0.997684,
+      "rotationDegrees": -92.563
+    },
+    {
+      "filename": "2024-usopen-1164_pt0117_srv1.npy",
+      "included": true,
+      "view": "rear",
+      "basis": "post-reach hip axis",
+      "sourceView": "unknown",
+      "coherence": 0.982248,
+      "rotationDegrees": -78.67
+    },
+    {
+      "filename": "2024-usopen-1164_pt0130_srv1.npy",
+      "included": false,
+      "view": "rear",
+      "basis": "post-reach hip axis",
+      "sourceView": "unknown",
+      "coherence": 0.889466,
+      "excluded": "unstable_post_reach_orientation"
+    },
+    {
+      "filename": "2024-usopen-1164_pt0131_srv1.npy",
+      "included": false,
+      "view": "rear",
+      "basis": "post-reach hip axis",
+      "sourceView": "unknown",
+      "coherence": 0.823501,
+      "excluded": "unstable_post_reach_orientation"
+    },
+    {
+      "filename": "2024-usopen-1164_pt0153_srv1.npy",
+      "included": true,
+      "view": "rear",
+      "basis": "post-reach hip axis",
+      "sourceView": "unknown",
+      "coherence": 0.968731,
+      "rotationDegrees": -85.515
+    },
+    {
+      "filename": "2024-usopen-1164_pt0163_srv1.npy",
+      "included": false,
+      "view": "rear",
+      "basis": "post-reach hip axis",
+      "sourceView": "unknown",
+      "coherence": 0.756995,
+      "excluded": "unstable_post_reach_orientation"
+    },
+    {
+      "filename": "2024-usopen-1164_pt0171_srv1.npy",
+      "included": true,
+      "view": "rear",
+      "basis": "post-reach hip axis",
+      "sourceView": "unknown",
+      "coherence": 0.985647,
+      "rotationDegrees": -79.809
+    },
+    {
+      "filename": "2024-usopen-1164_pt0173_srv1.npy",
+      "included": true,
+      "view": "rear",
+      "basis": "post-reach hip axis",
+      "sourceView": "unknown",
+      "coherence": 0.969372,
+      "rotationDegrees": -80.708
+    },
+    {
+      "filename": "2024-usopen-1164_pt0174_srv1.npy",
+      "included": true,
+      "view": "rear",
+      "basis": "post-reach hip axis",
+      "sourceView": "unknown",
+      "coherence": 0.977877,
+      "rotationDegrees": -80.213
+    },
+    {
+      "filename": "2024-usopen-1232_pt0017_srv1.npy",
+      "included": true,
+      "view": "rear",
+      "basis": "post-reach hip axis",
+      "sourceView": "unknown",
+      "coherence": 0.982801,
+      "rotationDegrees": -82.265
+    },
+    {
+      "filename": "2024-usopen-1232_pt0018_srv2.npy",
+      "included": true,
+      "view": "rear",
+      "basis": "post-reach hip axis",
+      "sourceView": "unknown",
+      "coherence": 0.997772,
+      "rotationDegrees": -103.381
+    },
+    {
+      "filename": "2024-usopen-1232_pt0020_srv2.npy",
+      "included": true,
+      "view": "rear",
+      "basis": "post-reach hip axis",
+      "sourceView": "unknown",
+      "coherence": 0.978659,
+      "rotationDegrees": -100.581
+    },
+    {
+      "filename": "2024-usopen-1232_pt0040_srv1.npy",
+      "included": false,
+      "view": "rear",
+      "basis": "post-reach hip axis",
+      "sourceView": "unknown",
+      "coherence": 0.851263,
+      "excluded": "unstable_post_reach_orientation"
+    },
+    {
+      "filename": "2024-usopen-1232_pt0043_srv1.npy",
+      "included": false,
+      "view": "rear",
+      "basis": "post-reach hip axis",
+      "sourceView": "unknown",
+      "coherence": 0.842141,
+      "excluded": "unstable_post_reach_orientation"
+    },
+    {
+      "filename": "2024-usopen-1232_pt0049_srv1.npy",
+      "included": true,
+      "view": "rear",
+      "basis": "post-reach hip axis",
+      "sourceView": "unknown",
+      "coherence": 0.969829,
+      "rotationDegrees": -91.907
+    },
+    {
+      "filename": "2024-usopen-1232_pt0050_srv1.npy",
+      "included": true,
+      "view": "rear",
+      "basis": "post-reach hip axis",
+      "sourceView": "unknown",
+      "coherence": 0.988793,
+      "rotationDegrees": -78.657
+    },
+    {
+      "filename": "2024-usopen-1232_pt0051_srv1.npy",
+      "included": true,
+      "view": "rear",
+      "basis": "post-reach hip axis",
+      "sourceView": "unknown",
+      "coherence": 0.987431,
+      "rotationDegrees": -100.067
+    },
+    {
+      "filename": "2024-usopen-1232_pt0053_srv1.npy",
+      "included": true,
+      "view": "rear",
+      "basis": "post-reach hip axis",
+      "sourceView": "unknown",
+      "coherence": 0.981013,
+      "rotationDegrees": -88.967
+    },
+    {
+      "filename": "2024-usopen-1232_pt0067_srv1.npy",
+      "included": false,
+      "view": "rear",
+      "basis": "post-reach hip axis",
+      "sourceView": "unknown",
+      "coherence": 0.814856,
+      "excluded": "unstable_post_reach_orientation"
+    },
+    {
+      "filename": "2024-usopen-1232_pt0076_srv1.npy",
+      "included": true,
+      "view": "rear",
+      "basis": "post-reach hip axis",
+      "sourceView": "unknown",
+      "coherence": 0.991425,
+      "rotationDegrees": -103.62
+    },
+    {
+      "filename": "2024-usopen-1232_pt0078_srv1.npy",
+      "included": true,
+      "view": "rear",
+      "basis": "post-reach hip axis",
+      "sourceView": "unknown",
+      "coherence": 0.985864,
+      "rotationDegrees": -108.025
+    },
+    {
+      "filename": "2024-usopen-1232_pt0081_srv1.npy",
+      "included": true,
+      "view": "rear",
+      "basis": "post-reach hip axis",
+      "sourceView": "unknown",
+      "coherence": 0.973849,
+      "rotationDegrees": -86.917
+    },
+    {
+      "filename": "2024-usopen-1232_pt0098_srv1.npy",
+      "included": false,
+      "view": "rear",
+      "basis": "post-reach hip axis",
+      "sourceView": "unknown",
+      "coherence": 0.885912,
+      "excluded": "unstable_post_reach_orientation"
+    },
+    {
+      "filename": "2024-usopen-1232_pt0102_srv1.npy",
+      "included": false,
+      "view": "rear",
+      "basis": "post-reach hip axis",
+      "sourceView": "unknown",
+      "coherence": 0.856916,
+      "excluded": "unstable_post_reach_orientation"
+    },
+    {
+      "filename": "2024-usopen-1232_pt0127_srv1.npy",
+      "included": true,
+      "view": "rear",
+      "basis": "post-reach hip axis",
+      "sourceView": "unknown",
+      "coherence": 0.900498,
+      "rotationDegrees": -89.61
+    },
+    {
+      "filename": "2024-usopen-1232_pt0143_srv1.npy",
+      "included": true,
+      "view": "rear",
+      "basis": "post-reach hip axis",
+      "sourceView": "unknown",
+      "coherence": 0.976738,
+      "rotationDegrees": -102.719
+    },
+    {
+      "filename": "2024-usopen-1232_pt0144_srv1.npy",
+      "included": true,
+      "view": "rear",
+      "basis": "post-reach hip axis",
+      "sourceView": "unknown",
+      "coherence": 0.977089,
+      "rotationDegrees": -81.21
+    },
+    {
+      "filename": "2024-usopen-1232_pt0145_srv1.npy",
+      "included": true,
+      "view": "rear",
+      "basis": "post-reach hip axis",
+      "sourceView": "unknown",
+      "coherence": 0.953259,
+      "rotationDegrees": -80.628
+    },
+    {
+      "filename": "2024-usopen-1232_pt0146_srv1.npy",
+      "included": true,
+      "view": "rear",
+      "basis": "post-reach hip axis",
+      "sourceView": "unknown",
+      "coherence": 0.9825,
+      "rotationDegrees": -80.1
+    },
+    {
+      "filename": "2024-usopen-1232_pt0147_srv1.npy",
+      "included": true,
+      "view": "rear",
+      "basis": "post-reach hip axis",
+      "sourceView": "unknown",
+      "coherence": 0.977781,
+      "rotationDegrees": -92.564
+    },
+    {
+      "filename": "2024-usopen-1232_pt0155_srv1.npy",
+      "included": true,
+      "view": "rear",
+      "basis": "post-reach hip axis",
+      "sourceView": "unknown",
+      "coherence": 0.904864,
+      "rotationDegrees": -83.1
+    },
+    {
+      "filename": "2024-usopen-1232_pt0157_srv1.npy",
+      "included": false,
+      "view": "rear",
+      "basis": "post-reach hip axis",
+      "sourceView": "unknown",
+      "coherence": 0.859511,
+      "excluded": "unstable_post_reach_orientation"
+    },
+    {
+      "filename": "2024-usopen-1316_pt0002_srv1.npy",
+      "included": false,
+      "view": "rear",
+      "basis": "post-reach hip axis",
+      "sourceView": "unknown",
+      "coherence": 0.887815,
+      "excluded": "unstable_post_reach_orientation"
+    },
+    {
+      "filename": "2024-usopen-1316_pt0003_srv2.npy",
+      "included": true,
+      "view": "rear",
+      "basis": "post-reach hip axis",
+      "sourceView": "unknown",
+      "coherence": 0.95861,
+      "rotationDegrees": -140.203
+    },
+    {
+      "filename": "2024-usopen-1316_pt0004_srv2.npy",
+      "included": false,
+      "view": "rear",
+      "basis": "post-reach hip axis",
+      "sourceView": "unknown",
+      "coherence": 0.796761,
+      "excluded": "unstable_post_reach_orientation"
+    },
+    {
+      "filename": "2024-usopen-1316_pt0014_srv1.npy",
+      "included": true,
+      "view": "rear",
+      "basis": "post-reach hip axis",
+      "sourceView": "unknown",
+      "coherence": 0.982516,
+      "rotationDegrees": -92.428
+    },
+    {
+      "filename": "2024-usopen-1316_pt0016_srv2.npy",
+      "included": true,
+      "view": "rear",
+      "basis": "post-reach hip axis",
+      "sourceView": "unknown",
+      "coherence": 0.983704,
+      "rotationDegrees": -97.207
+    },
+    {
+      "filename": "2024-usopen-1316_pt0024_srv1.npy",
+      "included": false,
+      "view": "rear",
+      "basis": "post-reach hip axis",
+      "sourceView": "unknown",
+      "coherence": 0.703723,
+      "excluded": "unstable_post_reach_orientation"
+    },
+    {
+      "filename": "2024-usopen-1316_pt0027_srv1.npy",
+      "included": false,
+      "view": "rear",
+      "basis": "post-reach hip axis",
+      "sourceView": "unknown",
+      "coherence": 0.739857,
+      "excluded": "unstable_post_reach_orientation"
+    },
+    {
+      "filename": "2024-usopen-1316_pt0063_srv1.npy",
+      "included": true,
+      "view": "rear",
+      "basis": "post-reach hip axis",
+      "sourceView": "unknown",
+      "coherence": 0.980902,
+      "rotationDegrees": -72.385
+    },
+    {
+      "filename": "2024-usopen-1316_pt0065_srv1.npy",
+      "included": true,
+      "view": "rear",
+      "basis": "post-reach hip axis",
+      "sourceView": "unknown",
+      "coherence": 0.965567,
+      "rotationDegrees": -89.654
+    },
+    {
+      "filename": "2024-usopen-1316_pt0078_srv1.npy",
+      "included": false,
+      "view": "rear",
+      "basis": "post-reach hip axis",
+      "sourceView": "unknown",
+      "coherence": 0.622856,
+      "excluded": "unstable_post_reach_orientation"
+    },
+    {
+      "filename": "2024-usopen-1316_pt0087_srv1.npy",
+      "included": true,
+      "view": "rear",
+      "basis": "post-reach hip axis",
+      "sourceView": "unknown",
+      "coherence": 0.991463,
+      "rotationDegrees": -78.452
+    },
+    {
+      "filename": "2024-usopen-1316_pt0090_srv1.npy",
+      "included": true,
+      "view": "rear",
+      "basis": "post-reach hip axis",
+      "sourceView": "unknown",
+      "coherence": 0.979121,
+      "rotationDegrees": -91.155
+    },
+    {
+      "filename": "2024-usopen-1316_pt0091_srv2.npy",
+      "included": true,
+      "view": "rear",
+      "basis": "post-reach hip axis",
+      "sourceView": "unknown",
+      "coherence": 0.982127,
+      "rotationDegrees": -80.365
+    },
+    {
+      "filename": "2024-usopen-1316_pt0111_srv1.npy",
+      "included": true,
+      "view": "rear",
+      "basis": "post-reach hip axis",
+      "sourceView": "unknown",
+      "coherence": 0.974936,
+      "rotationDegrees": -100.19
+    },
+    {
+      "filename": "2024-usopen-1316_pt0112_srv1.npy",
+      "included": true,
+      "view": "rear",
+      "basis": "post-reach hip axis",
+      "sourceView": "unknown",
+      "coherence": 0.96858,
+      "rotationDegrees": -79.596
+    },
+    {
+      "filename": "2024-usopen-1316_pt0121_srv1.npy",
+      "included": false,
+      "view": "rear",
+      "basis": "post-reach hip axis",
+      "sourceView": "unknown",
+      "coherence": 0.669936,
+      "excluded": "unstable_post_reach_orientation"
+    },
+    {
+      "filename": "2024-usopen-1316_pt0133_srv1.npy",
+      "included": true,
+      "view": "rear",
+      "basis": "post-reach hip axis",
+      "sourceView": "unknown",
+      "coherence": 0.969254,
+      "rotationDegrees": -79.987
+    },
+    {
+      "filename": "2024-usopen-1316_pt0134_srv1.npy",
+      "included": true,
+      "view": "rear",
+      "basis": "post-reach hip axis",
+      "sourceView": "unknown",
+      "coherence": 0.98797,
+      "rotationDegrees": -98.47
+    },
+    {
+      "filename": "2024-usopen-1316_pt0149_srv1.npy",
+      "included": false,
+      "view": "rear",
+      "basis": "post-reach hip axis",
+      "sourceView": "unknown",
+      "excluded": "degenerate_hip_axis"
+    },
+    {
+      "filename": "2024-usopen-1316_pt0163_srv1.npy",
+      "included": true,
+      "view": "rear",
+      "basis": "post-reach hip axis",
+      "sourceView": "unknown",
+      "coherence": 0.978931,
+      "rotationDegrees": -84.876
+    },
+    {
+      "filename": "2024-usopen-1316_pt0165_srv2.npy",
+      "included": true,
+      "view": "rear",
+      "basis": "post-reach hip axis",
+      "sourceView": "unknown",
+      "coherence": 0.95219,
+      "rotationDegrees": -78.048
+    },
+    {
+      "filename": "2024-usopen-1316_pt0166_srv1.npy",
+      "included": true,
+      "view": "rear",
+      "basis": "post-reach hip axis",
+      "sourceView": "unknown",
+      "coherence": 0.990393,
+      "rotationDegrees": -95.018
+    },
+    {
+      "filename": "2024-usopen-1316_pt0188_srv1.npy",
+      "included": true,
+      "view": "rear",
+      "basis": "post-reach hip axis",
+      "sourceView": "unknown",
+      "coherence": 0.978608,
+      "rotationDegrees": -81.874
+    },
+    {
+      "filename": "2024-usopen-1316_pt0189_srv1.npy",
+      "included": true,
+      "view": "rear",
+      "basis": "post-reach hip axis",
+      "sourceView": "unknown",
+      "coherence": 0.99708,
+      "rotationDegrees": -94.395
+    },
+    {
+      "filename": "2024-usopen-1316_pt0190_srv1.npy",
+      "included": true,
+      "view": "rear",
+      "basis": "post-reach hip axis",
+      "sourceView": "unknown",
+      "coherence": 0.963368,
+      "rotationDegrees": -91.345
+    },
+    {
+      "filename": "2024-usopen-1316_pt0191_srv1.npy",
+      "included": true,
+      "view": "rear",
+      "basis": "post-reach hip axis",
+      "sourceView": "unknown",
+      "coherence": 0.97743,
+      "rotationDegrees": -107.306
+    },
+    {
+      "filename": "2024-usopen-1316_pt0204_srv1.npy",
+      "included": false,
+      "view": "rear",
+      "basis": "post-reach hip axis",
+      "sourceView": "unknown",
+      "coherence": 0.77627,
+      "excluded": "unstable_post_reach_orientation"
+    },
+    {
+      "filename": "2024-usopen-1316_pt0205_srv1.npy",
+      "included": false,
+      "view": "rear",
+      "basis": "post-reach hip axis",
+      "sourceView": "unknown",
+      "coherence": 0.865482,
+      "excluded": "unstable_post_reach_orientation"
+    },
+    {
+      "filename": "2024-usopen-1316_pt0224_srv1.npy",
+      "included": true,
+      "view": "rear",
+      "basis": "post-reach hip axis",
+      "sourceView": "unknown",
+      "coherence": 0.97356,
+      "rotationDegrees": -80.775
+    },
+    {
+      "filename": "2024-usopen-1316_pt0226_srv1.npy",
+      "included": true,
+      "view": "rear",
+      "basis": "post-reach hip axis",
+      "sourceView": "unknown",
+      "coherence": 0.98441,
+      "rotationDegrees": -77.364
+    },
+    {
+      "filename": "2024-usopen-1316_pt0228_srv1.npy",
+      "included": true,
+      "view": "rear",
+      "basis": "post-reach hip axis",
+      "sourceView": "unknown",
+      "coherence": 0.990736,
+      "rotationDegrees": -73.713
+    }
+  ]
+}

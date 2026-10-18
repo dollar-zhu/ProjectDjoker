@@ -118,12 +118,14 @@ def process(d):
             latencies=[float(x) for x in re.findall(r'1 inference took ([\d.]+) ms',log)]
     update(d,stage='Finding moments and preparing feedback',progress=90)
     poses=np.asarray(poses);scores=np.asarray(scores);times=np.arange(len(poses))/20
-    result=review(d,times,poses,scores,o['view'],o['handedness'],[w,h])
+    tracked_crop=job.get('capture',{}).get('crop_mode')=='recorded_tracking_extent'
+    result=review(d,times,poses,scores,o['view'],o['handedness'],[w,h],
+                  crop_mode='recorded_tracking_extent' if tracked_crop else 'fixed_operator')
     result.update({'frames':[{'time':float(t),'xy':p.tolist(),'scores':s.tolist()} for t,p,s in zip(times,poses,scores)],
         'stats':{'frames':len(poses),'sample_fps':20,'mean_inference_ms':float(np.mean(latencies)) if latencies else None,
                  'processing_seconds':round(time.monotonic()-started,2),'backend':'Mac CPU · ONNX Runtime' if session else 'Ventuno · ExecuTorch QNN FP16'},
-        'limitations':['Player crop selected manually; inspect the skeleton for wrong-person or occlusion errors.',
-        'Loading and reach are estimates, not ball toss, trophy, contact or landing labels.',
+        'limitations':[('Player crop estimated from recorded tracking; inspect the skeleton for cropping or occlusion errors.' if tracked_crop else 'Player crop selected manually; inspect the skeleton for wrong-person or occlusion errors.'),
+        'Body-movement stages are estimates. Ball release, racket drop, contact and landing are not measured. Missing stages reflect insufficient tracking.',
         'Reference-based corrections and scores are withheld until validated.',
         'All processing ran locally on the Mac CPU.' if session else 'Mac prepares video and feedback; Ventuno performs pose inference.']})
     (d/'result.json').write_text(json.dumps(result,allow_nan=False))
