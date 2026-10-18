@@ -3,10 +3,12 @@
 No service or packages are installed on the board. The adb-owned ffmpeg process
 closes with the pipe. Only a completed estimated serve enters the review queue.
 """
+from collections import deque
 import fcntl
 import json
 import os
 from pathlib import Path
+import queue
 import subprocess
 import sys
 import threading
@@ -16,7 +18,7 @@ import uuid
 
 import cv2
 import numpy as np
-from capture import ServeCapture, ReadyServeCapture, ManualCapture, PlayerCrop, pose_signal, ready_pose
+from capture import ServeCapture, ReadyServeCapture, ContinuousServeCapture, ManualCapture, PlayerCrop, motion_features, pose_signal, ready_pose
 from pose import crop_input, decode
 from worker import ONNX, prepare, process, update
 
@@ -99,6 +101,47 @@ def save_review(root, path, options, completion="estimated_overhead_then_followt
     return job_id
 
 
+def framing_warning(trace, handedness='right'):
+    """The reach is the review's key frame; a hitting wrist at the image edge cannot locate it."""
+    wrist=10 if handedness=='right' else 9
+    if any(f['xy'][wrist][1]<=2 for f in trace if f['auto_state']=='recording'):
+        return 'Your reach left the top of the frame. Move the camera back or tilt it up.'
+    return None
+
+
+class ReviewQueue:
+    """Review completed clips one at a time while the camera keeps tracking."""
+    def __init__(self, root, options, changed):
+        self.root, self.options, self.changed = root, options, changed
+        self.jobs = queue.Queue()
+        self.thread = threading.Thread(target=self._run, daemon=True)
+        self.thread.start()
+
+    def submit(self, number, path, trace, warning=None):
+        self.changed(number, None, 'saving', warning)
+        self.jobs.put((number, path, trace, warning))
+
+    def _run(self):
+        while (item := self.jobs.get()) is not None:
+            number, path, trace, warning = item
+            job_id = None
+            try:
+                job_id = save_review(self.root, path, self.options, 'observed_reach_descent_recovery', trace)
+                self.changed(number, job_id, 'processing', warning)
+                process(self.root/job_id)
+                self.changed(number, job_id, 'complete', warning)
+            except Exception as exc:
+                traceback.print_exc()
+                if job_id:
+                    update(self.root/job_id, status='failed', stage='Processing stopped', error=str(exc))
+                path.unlink(missing_ok=True)
+                self.changed(number, job_id, 'failed', warning)
+
+    def close(self):
+        self.jobs.put(None)
+        self.thread.join()
+
+
 class JpegFrames:
     """Recover JPEG boundaries even if a diagnostic or damaged frame enters the pipe."""
     def __init__(self):
@@ -179,9 +222,11 @@ class BoardCamera:
 
 
 def run(root, options):
-    manual = options.pop('mode', 'auto') == 'manual'
+    mode = options.pop('mode', 'auto')
+    manual, continuous = mode == 'manual', mode == 'continuous'
     gate = ManualCapture() if manual else None
     trace = []
+    pending = deque()
     live = root / 'live'
     live.mkdir(parents=True, exist_ok=True)
     # Process-level lease works across Next.js reloads and concurrent requests.
@@ -190,11 +235,18 @@ def run(root, options):
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
             return
-        state = {'pid': os.getpid(), 'active': True, 'state': 'starting', 'message': 'Opening Ventuno camera…', 'jobId': None, 'mode': 'manual' if manual else 'auto'}
+        state = {'pid': os.getpid(), 'active': True, 'state': 'starting', 'message': 'Opening Ventuno camera…', 'jobId': None, 'mode': mode, 'captures': []}
+        written = threading.Lock()
         def status(**fields):
-            state.update(fields, updated=time.time())
-            temp=live/'status.tmp';temp.write_text(json.dumps(state));temp.replace(live/'status.json')
-        camera = recorder = audio = None
+            with written:
+                state.update(fields, updated=time.time())
+                temp=live/'status.tmp';temp.write_text(json.dumps(state));temp.replace(live/'status.json')
+        def captured(number, job_id, review, warning=None):
+            with written:
+                rows=[c for c in state['captures'] if c['number']!=number]
+                state['captures']=[{'number':number,'jobId':job_id,'status':review,'at':time.time(),'warning':warning},*rows][:20]
+            status()
+        camera = recorder = audio = reviews = diagnostics = None
         try:
             status()
             try:
@@ -212,7 +264,12 @@ def run(root, options):
                 raise ValueError('Live tracking needs the wholebody RTMPose model.')
             with open(live/'camera.log','ab') as log:
                 camera=BoardCamera(log)
-                detector=ServeCapture() if manual else ReadyServeCapture(options['handedness'])
+                detector=(ServeCapture() if manual else ContinuousServeCapture(options['handedness']) if continuous
+                          else ReadyServeCapture(options['handedness']))
+                if continuous:
+                    reviews=ReviewQueue(root,options,captured)
+                    # Per-frame detector inputs and state explain missed or unexpected captures.
+                    diagnostics=open(live/'continuous.jsonl','w',buffering=1)
                 player_crop=PlayerCrop(options['crop']);last=time.monotonic();message='Step into the player area with your whole body visible.'
                 clip=live/'capture.avi'
                 while not (live/'stop').exists():
@@ -224,6 +281,8 @@ def run(root, options):
                         continue
                     stamp,image=frame
                     # A long transport/processing gap invalidates motion continuity.
+                    if stamp-last>.5:
+                        pending.clear()
                     if stamp-last>.5 and recorder and not manual:
                         recorder.close();recorder=None;clip.unlink(missing_ok=True)
                         detector.cancel()
@@ -240,7 +299,7 @@ def run(root, options):
                     x1,y1,x2,y2=np.asarray(options['crop'])*[640,480,640,480]
                     center=xy[11:13].mean(0)
                     present=present and x1<=center[0]<=x2 and y1<=center[1]<=y2
-                    ready=present and ready_pose(xy,scores,640,480)
+                    ready=present and not continuous and ready_pose(xy,scores,640,480)
                     observed=xy.copy()
                     visible=(np.isfinite(xy).all(1)&np.isfinite(scores)&(scores>=.5)
                              &(xy[:,0]>=0)&(xy[:,0]<640)&(xy[:,1]>=0)&(xy[:,1]<480))
@@ -253,31 +312,57 @@ def run(root, options):
                                      moving=bool(present and (overhead or not lowered)))
                     player_crop.update(stamp,xy,present,640,480)
                     auto_event=(detector.update(stamp,present,overhead,lowered) if manual
+                                else detector.update(stamp,present,overhead,observed) if continuous
                                 else detector.update(stamp,present,overhead,lowered,ready,pose=observed))
+                    if diagnostics:
+                        features=motion_features(observed,options['handedness']) or {}
+                        diagnostics.write(json.dumps({'t':round(stamp,3),'present':bool(present),'overhead':bool(overhead),
+                            'wrist':features.get('wrist'),'elbow':features.get('elbow'),'state':detector.state,
+                            'settle':round(detector.ready_progress,2),'event':auto_event})+'\n')
+                    if auto_event and continuous:
+                        status(lastEvent={'event':auto_event,'number':detector.captured,'at':time.time()})
                     command=None
                     if manual and (live/'command.json').exists():
                         command=json.loads((live/'command.json').read_text())['action']
                         (live/'command.json').unlink(missing_ok=True)
                     event=gate.update(stamp,command) if manual else auto_event
-                    if event=='start':
-                        recorder=TimedRecording(clip,(640,480),30 if manual else 15)
-                        recorder.add(stamp,image)
-                        trace=[]
-                        message='Manual recording · tracking loss will not stop this clip.' if manual else 'Recording · serve when ready.'
-                    elif recorder:
-                        recorder.add(stamp,image)
-                    if recorder:
-                        trace.append({'time':round(stamp-recorder.start,4),'present':bool(present),
+                    record={'present':bool(present),
                             'overhead':bool(overhead),'lowered':bool(lowered),'auto_state':detector.state,
                             'ready':bool(ready),
                             'finish_evidence':{} if manual else dict(detector.finish.evidence),
                             'auto_event':auto_event,'crop':inference_crop,'xy':np.nan_to_num(xy).tolist(),
-                            'scores':np.nan_to_num(scores).tolist()})
+                            'scores':np.nan_to_num(scores).tolist()}
+                    if continuous and not recorder:
+                        # Pre-roll: the reach is detected after setup and loading have happened.
+                        pending.append((stamp,image,record))
+                        while pending[0][0]<stamp-detector.PRE-.5: pending.popleft()
+                    if event=='start':
+                        recorder=TimedRecording(clip,(640,480),30 if manual else 15)
+                        trace=[]
+                        backlog=[f for f in pending if f[0]>=detector.clip_start] if continuous else [(stamp,image,record)]
+                        for t,frame_image,row in backlog:
+                            recorder.add(t,frame_image)
+                            trace.append({'time':round(t-recorder.start,4),**row})
+                        pending.clear()
+                        message=('Manual recording · tracking loss will not stop this clip.' if manual
+                                 else 'Serve detected · waiting for the follow-through.' if continuous else 'Recording · serve when ready.')
+                    elif recorder:
+                        recorder.add(stamp,image)
+                        trace.append({'time':round(stamp-recorder.start,4),**record})
+                    if continuous and event in ('complete','discard'):
+                        pending.clear()
                     if event in ('complete','discard') and recorder:
                         recorder.close();recorder=None
                         if event=='discard':
                             clip.unlink(missing_ok=True)
-                            message='Attempt discarded: tracking lost or no complete motion within 18 seconds.'
+                            message=('That movement did not finish like a serve. Still watching.' if continuous
+                                     else 'Attempt discarded: tracking lost or no complete motion within 18 seconds.')
+                        elif continuous:
+                            saved=live/f'capture-{uuid.uuid4().hex}.avi'
+                            clip.replace(saved)
+                            warning=framing_warning(trace,options['handedness'])
+                            reviews.submit(detector.captured,saved,trace,warning)
+                            message=f'Serve {detector.captured} captured · reviewing in the background.'+(' '+warning if warning else '')
                         else:
                             status(state='processing',message='Serve captured. Preparing your review…',countdown=None,readyProgress=0)
                             job_id=save_review(root,clip,options,gate.completion if manual else 'observed_reach_descent_recovery',trace)
@@ -307,7 +392,14 @@ def run(root, options):
                         temp=live/'preview.tmp';temp.write_bytes(jpeg.tobytes());temp.replace(live/'preview.jpg')
                     if manual and gate.state=='ready' and not state.get('jobId'):
                         message='Camera ready. Click Start recording, then perform one serve.'
-                    if not manual and detector.state=='waiting':
+                    if continuous:
+                        if detector.state=='waiting':
+                            message=('Step into the player area with your whole body visible.' if not present
+                                     else 'Lower your arms and settle into your stance.' if overhead
+                                     else 'Getting set · hold your stance for a moment.')
+                        elif detector.state=='watching':
+                            message='Watching · serve whenever you are ready.'
+                    elif not manual and detector.state=='waiting':
                         if not present:
                             message='Step into the player area with your whole body visible.'
                         elif not detector.armed:
@@ -316,19 +408,20 @@ def run(root, options):
                             message='Hold your hand at shoulder height…'
                         else:
                             message='Raise either hand to shoulder height and hold briefly to begin.'
-                    if not manual and detector.state=='countdown':
+                    if not manual and not continuous and detector.state=='countdown':
                         message='Get ready to serve…' if present else 'Keep your whole body visible.'
-                    if not manual and recorder and detector.saw_overhead:
+                    if not manual and not continuous and recorder and detector.saw_overhead:
                         message='Recording · waiting for the follow-through.'
                     status(state=gate.state if manual else detector.state,message=message,present=bool(present),
                            ready=bool(ready),countdown=None if manual else detector.countdown,
                            readyProgress=0 if manual else round(detector.ready_progress,3),
-                           inference_ms=round(inference_ms,1),frame_to_preview_ms=round((time.monotonic()-stamp)*1000,1),elapsed=round(stamp-(gate.started if manual else detector.started),1) if recorder else 0)
+                           inference_ms=round(inference_ms,1),frame_to_preview_ms=round((time.monotonic()-stamp)*1000,1),elapsed=round(stamp-recorder.start,1) if recorder else 0)
         except Exception as exc:
             traceback.print_exc()
             status(state='error',message=str(exc))
         finally:
             if audio: audio.close()
+            if diagnostics: diagnostics.close()
             if recorder:
                 recorder.close()
                 if manual:
@@ -339,6 +432,10 @@ def run(root, options):
                         traceback.print_exc()  # save_review preserves the input even if preparation fails
             (live/'capture.avi').unlink(missing_ok=True)
             if camera: camera.close()
+            if reviews:
+                # Captured serves still become reviews after the camera is released.
+                status(message='Camera released · finishing captured serve reviews…')
+                reviews.close()
             status(active=False,state='error' if state['state']=='error' else 'stopped',
                    message=state['message'] if state['state']=='error' else 'Live camera stopped.')
 

@@ -24,7 +24,7 @@ export async function POST(req:Request){
   const body=await req.json();
   if(!['start','stop','record','finish'].includes(body.action))throw Error('Choose start, stop, record or finish.');
   const mode=body.mode||'auto';
-  if(!['auto','manual'].includes(mode))throw Error('Choose automatic or manual capture.');
+  if(!['continuous','auto','manual'].includes(mode))throw Error('Choose continuous, ready-gesture or manual capture.');
   const options=body.action==='start'?parseOptions(body.options):null;
   if(options&&(options.handedness!=='right'||!['rear','side'].includes(options.view)))throw Error('Automatic capture currently supports right-handed serves from the side or rear.');
   await mkdir(dir,{recursive:true});

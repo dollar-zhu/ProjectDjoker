@@ -307,6 +307,121 @@ class ReadyServeCapture:
         return None
 
 
+class ContinuousServeCapture:
+    """Settled stance → observed reach → descent → recovery, repeatedly.
+
+    No ready gesture: a settled full-body stance arms detection, and the live
+    loop's pre-roll supplies setup and loading before the reach. Any overhead
+    arm movement completing this sequence can be captured; it is not a serve
+    or contact classifier, and review applies its own evidence gates.
+    """
+    PRE = 3.5
+
+    def __init__(self, handedness='right'):
+        self.handedness = handedness
+        self.finish = MotionFinish(handedness)
+        self.state = 'waiting'
+        self.started = self.cooldown_until = 0
+        self.onset = self.settled_from = None
+        self.last_t = self.settled_since = self.lost_since = None
+        self.countdown = None
+        self.ready_progress = 0
+        self.armed = True
+        self.captured = 0
+
+    @property
+    def saw_overhead(self):
+        return self.state == 'recording'
+
+    @property
+    def clip_start(self):
+        # Pre-roll never reaches back before the settled stance, so an earlier
+        # uncaptured movement cannot become this clip's reach.
+        return max(self.onset - self.PRE, self.settled_from)
+
+    def cancel(self):
+        self.finish = MotionFinish(self.handedness)
+        self.state = 'waiting'
+        self.settled_since = self.lost_since = None
+
+    def end(self, t, event):
+        self.cancel()
+        self.state = 'cooldown'
+        self.cooldown_until = t + 1.5
+        if event == 'complete':
+            self.captured += 1
+        return event
+
+    def update(self, t, present, overhead, pose):
+        gap = 0 if self.last_t is None else t - self.last_t
+        self.last_t = t
+        if gap > .5 + 1e-9:
+            event = 'discard' if self.state == 'recording' else None
+            self.cancel()
+            return event
+        if self.state == 'cooldown':
+            if t < self.cooldown_until:
+                return None
+            self.state = 'waiting'
+        if self.state == 'recording':
+            body_visible = motion_features(pose, self.handedness) is not None
+            if body_visible:
+                self.lost_since = None
+            elif self.lost_since is None:
+                self.lost_since = t
+            recovery = self.finish.update(t, pose)
+            if recovery == 'complete':
+                return self.end(t, 'complete')
+            # A serve's reach-to-recovery lasts about a second; a held raised
+            # arm or wandering movement is released rather than recorded.
+            held = (self.finish.overhead_since is not None
+                    and t - self.finish.overhead_since >= 2 - 1e-9)
+            if held or t - self.started >= 4 - 1e-9 or (self.lost_since is not None and t - self.lost_since >= 1 - 1e-9):
+                return self.end(t, 'discard')
+            return None
+        if self.state == 'waiting':
+            # Arming needs a whole, still-unraised body; walk-ins, ready holds
+            # and the tail of a previous attempt cannot supply overhead evidence.
+            # A single low-confidence frame pauses, rather than restarts, settling.
+            if present:
+                self.lost_since = None
+            elif self.lost_since is None:
+                self.lost_since = t
+            if overhead or (self.lost_since is not None and t - self.lost_since >= .3 - 1e-9):
+                self.settled_since = None
+                self.ready_progress = 0
+                return None
+            if not present:
+                return None
+            if self.settled_since is None:
+                self.settled_since = t
+            self.ready_progress = min(1, (t - self.settled_since) / 1)
+            if self.ready_progress >= 1:
+                self.state = 'watching'
+                self.settled_from = self.settled_since
+                self.finish = MotionFinish(self.handedness)
+                self.lost_since = None
+            return None
+        # Watching: brief ankle or wrist loss during the windup must not
+        # disarm, but sustained absence returns to waiting.
+        if present:
+            self.lost_since = None
+        elif self.lost_since is None:
+            self.lost_since = t
+        if self.lost_since is not None and t - self.lost_since >= 1 - 1e-9:
+            self.cancel()
+            self.ready_progress = 0
+            return None
+        self.finish.update(t, pose)
+        if self.finish.saw_overhead:
+            self.state = 'recording'
+            self.onset = self.finish.overhead_since
+            self.started = t
+            self.lost_since = None
+            return 'start'
+        return None
+
+
 def ready_pose(xy, scores, width, height):
     """Either visible wrist held near its shoulder, with the elbow below it."""
     if not pose_signal(xy, scores, width, height, 'right')[0]:
