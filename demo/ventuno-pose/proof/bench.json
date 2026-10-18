@@ -1,0 +1,126 @@
+{
+ "qnn_fp16": {
+  "pte": "rtmpose_qnn_fp16_QCS8275.pte",
+  "runner": "/home/arduino/git/executorch/build-x86/examples/qualcomm/executor_runner/qnn_executor_runner",
+  "frames": 20,
+  "per_frame_ms_20": [
+   6.588,
+   6.509,
+   6.324,
+   6.359,
+   6.729,
+   6.367,
+   6.318,
+   6.315,
+   6.328,
+   6.356,
+   6.738,
+   6.401,
+   6.713,
+   6.364,
+   6.394,
+   6.732,
+   6.354,
+   6.392,
+   6.394,
+   6.349
+  ],
+  "total_line": [
+   "I 00:00:00.635242 executorch:qnn_executor_runner.cpp:661] Total 20 inference took 129.024000 ms, avg 6.451200 ms"
+  ],
+  "peak_rss_mb": 50.25,
+  "iter50_line": "I 00:00:00.444245 executorch:qnn_executor_runner.cpp:617] 50 inference took 224.304000 ms, avg 4.486080 ms\nI 00:00:00.445682 executorch:qnn_executor_runner.cpp:661] Total 1 inference took 224.304000 ms, avg 224.304000 ms",
+  "load_lines": [
+   "I 00:00:00.001380 executorch:qnn_executor_runner.cpp:335] Model file rtmpose_qnn_fp16_QCS8275.pte is loaded.",
+   "I 00:00:00.222989 executorch:qnn_executor_runner.cpp:416] Method loaded."
+  ]
+ },
+ "xnnpack_fp32_threads": {
+  "4": {
+   "mean_ms": 85.87466524999999,
+   "p95_ms": 181.575742
+  },
+  "8": {
+   "mean_ms": 111.2224927,
+   "p95_ms": 127.68760110000001
+  }
+ },
+ "xnnpack_fp32": {
+  "pte": "rtmpose_xnnpack_fp32.pte",
+  "runner": "/home/arduino/git/executorch/build-xnnpack/executor_runner",
+  "frames": 20,
+  "per_frame_ms_20": [
+   207.917239,
+   234.569853,
+   174.356366,
+   230.112038,
+   185.395486,
+   212.298411,
+   121.358543,
+   191.596318,
+   200.807746,
+   207.012065,
+   216.096619,
+   184.850352,
+   172.486877,
+   216.760841,
+   189.535317,
+   195.576147,
+   227.649289,
+   176.041333,
+   202.059428,
+   216.098884
+  ],
+  "iter50_mean_ms": 201.35026291999998,
+  "iter50_p95_ms": 227.581227,
+  "iter50_min_ms": 142.611245,
+  "peak_rss_mb": 139.75,
+  "load_line": [
+   "I 00:00:00.198068 executorch:executor_runner.cpp:624] Model loaded in 192.729934 ms."
+  ]
+ },
+ "xnnpack_int8_threads": {
+  "4": {
+   "mean_ms": 37.9223317,
+   "p95_ms": 61.155901650000004
+  },
+  "8": {
+   "mean_ms": 27.9270747,
+   "p95_ms": 32.689768050000005
+  }
+ },
+ "xnnpack_int8": {
+  "pte": "rtmpose_xnnpack_int8.pte",
+  "runner": "/home/arduino/git/executorch/build-xnnpack/executor_runner",
+  "frames": 20,
+  "per_frame_ms_20": [
+   78.29435,
+   82.530935,
+   73.206574,
+   68.633481,
+   69.386131,
+   80.531784,
+   79.402313,
+   77.455348,
+   73.720791,
+   79.030598,
+   82.006203,
+   85.173316,
+   81.367197,
+   73.347983,
+   71.326486,
+   82.735262,
+   76.919781,
+   74.668234,
+   77.638683,
+   77.721651
+  ],
+  "iter50_mean_ms": 80.23006036000001,
+  "iter50_p95_ms": 89.5960996,
+  "iter50_min_ms": 66.671002,
+  "peak_rss_mb": 41.3984375,
+  "load_line": [
+   "I 00:00:00.081017 executorch:executor_runner.cpp:624] Model loaded in 79.236849 ms."
+  ]
+ }
+}
