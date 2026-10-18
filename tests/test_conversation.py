@@ -369,6 +369,27 @@ class ConversationTests(unittest.TestCase):
         self.assertFalse(controller.submit_wav(wav_bytes()))
         self.assertEqual(self.asr.calls, [])
 
+    def test_full_ten_second_utterance_has_five_second_upload_grace(self):
+        controller = self.controller()
+        self.assertTrue(controller.command({'action': 'listen'}))
+        self.assertEqual(controller.snapshot()['ptt'], {
+            'max_audio_seconds': 10, 'upload_window_seconds': 15})
+        with controller._lock:
+            # Advance the recording portion without waiting ten real seconds.
+            controller._listen_deadline -= 10.25
+        self.assertTrue(controller.submit_wav(wav_bytes(frames=160000)))
+        wait_for(lambda: len(self.asr.calls) == 1)
+
+    def test_expired_ptt_upload_is_rejected_even_before_monitor_tick(self):
+        controller = self.controller()
+        self.assertTrue(controller.command({'action': 'listen'}))
+        with controller._lock:
+            controller._listen_deadline = time.monotonic() - .01
+            self.assertFalse(controller.submit_wav(wav_bytes()))
+            self.assertFalse(controller._ptt_armed)
+        self.assertIn('upload window expired', controller.snapshot()['error'])
+        self.assertEqual(self.asr.calls, [])
+
     def test_audio_construction_never_blocks_environment_factory(self):
         from live import audio, bluetooth
         started, release = threading.Event(), threading.Event()

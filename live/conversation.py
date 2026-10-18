@@ -23,7 +23,7 @@ import urllib.request
 
 from coaching.board_feedback import validate
 from coaching.phraser import make_phraser
-from .asr import EnglishASR, MAX_WAV_BYTES
+from .asr import EnglishASR, MAX_SECONDS, MAX_WAV_BYTES
 
 
 SENTENCES = {
@@ -32,6 +32,7 @@ SENTENCES = {
     'limits': 'I have no current approved observation for that question. I can help with framing, not diagnose technique.',
 }
 PERSONA_SUFFIX = 'Djokovic can wait; one calm rep.'
+PTT_UPLOAD_WINDOW_SECONDS = MAX_SECONDS + 5
 
 
 class LiveConversation:
@@ -298,7 +299,7 @@ class LiveConversation:
                     return False
                 self._invalidate()
                 self._listening = self._ptt_armed = True
-                self._listen_deadline = time.monotonic() + 10
+                self._listen_deadline = time.monotonic() + PTT_UPLOAD_WINDOW_SECONDS
             elif action == 'stop_listening':
                 self._listening = False
             elif action == 'question':
@@ -328,6 +329,11 @@ class LiveConversation:
                 self._invalidate()
                 return False
             if not self._ptt_armed:
+                return False
+            if time.monotonic() >= self._listen_deadline:
+                self._listening = self._ptt_armed = False
+                self._invalidate()
+                self._error = 'PTT upload window expired; press listen and try again'
                 return False
             if not isinstance(data, bytes) or not 44 <= len(data) <= MAX_WAV_BYTES:
                 self._error = 'Expected at most 10 seconds of mono PCM16/16 kHz WAV bytes'
@@ -758,6 +764,8 @@ class LiveConversation:
                 'configured': bool(self.config),
                 'updated': time.time(), 'pid': os.getpid(), 'session': self.session_id,
                 'listening': self._listening,
+                'ptt': {'max_audio_seconds': MAX_SECONDS,
+                        'upload_window_seconds': PTT_UPLOAD_WINDOW_SECONDS},
                 'paired': bool(self._route_status.get('paired')),
                 'connected': bool(self._route_status.get('connected')),
                 'led_error': self._led_error, 'led_capability': self._led_capability,
