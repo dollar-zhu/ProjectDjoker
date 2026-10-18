@@ -73,19 +73,19 @@ The board runs only 2D pose, so the 3D reference is brought to 2D offline. `comp
 - **View:** the ±30° band keeps the projected knee angle near its 3D value. Square-on views (≈90°) read almost straight legs and are rejected. On reference data, the hip-width view estimate is within about ±7° at 15–45°. Live COCO hip landmarks add unmeasured error.
 - **Outputs:** `comparison.json` is the production result. It stays `insufficient_evidence` with null deltas until validation records exist: provisional joint mapping, unvalidated events and camera profile, and unknown serve type. `diagnostic.json` and `knee_vs_djokovic.png` hold the unvalidated measurements.
 
-## Board feedback decision and Qwen phrasing
+## Board feedback decision and Gemma phrasing
 
 `coaching/board_feedback.py` is what the device runs after a serve. It reads a DMS packet, `reference/projected2d/board_reference.json` (50 KB lookup table) and `coaching/rules.json`, and needs only numpy. It selects at most one cue, plus optional praise, deterministically by priority. By default the Djokovic-relative rules are blocked because no validation records exist, and it falls back to a descriptive observation. `--allow-unvalidated-reference` enables them for demos, and the output is labelled as such.
 
 ```sh
 .venv/bin/python -m coaching.board_feedback decide runs/dev/serve1/dms/serve1.json --out runs/dev/serve1/board_demo --allow-unvalidated-reference
-# Any OpenAI-compatible Qwen server (Ollama shown); set "model" in qwen_request.json to your Qwen tag
-curl -s http://localhost:11434/v1/chat/completions -H 'Content-Type: application/json' -d @runs/dev/serve1/board_demo/qwen_request.json \
+# Any OpenAI-compatible server (Ollama shown); "model" in phrase_request.json defaults to gemma4:e2b
+curl -s http://localhost:11434/v1/chat/completions -H 'Content-Type: application/json' -d @runs/dev/serve1/board_demo/phrase_request.json \
   | .venv/bin/python -c 'import json,sys; print(json.load(sys.stdin)["choices"][0]["message"]["content"])' \
   | .venv/bin/python -m coaching.board_feedback validate runs/dev/serve1/board_demo/feedback.json -
 ```
 
-Qwen only rephrases. `validate` accepts its speech only if it is ≤25 words, uses only the player's own measured numbers, introduces no body part or action outside the approved text, and avoids injury, speed, racket and guarantee claims. Otherwise it returns the canonical text. Rule thresholds are draft values awaiting review.
+The model's job is deliberately small: it adds brief praise and linking words and says the approved cue almost word for word. It never sees angles or reference values. `validate` accepts its speech only if it is ≤25 words, contains no number except the score, names no pro player, invents no praise, introduces no body part or action outside the approved text, and avoids injury, speed, racket and guarantee claims. Otherwise it returns the canonical text. Coaching content lives in the rules' `canonical_speech`; rule thresholds are draft values awaiting review. Compare prompts and models with `python -m coaching.evals.run_eval` (needs Ollama).
 
 ## Djokovic match score
 
