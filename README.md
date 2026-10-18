@@ -2,7 +2,7 @@
 
 <p align="center"><img src="docs/media/serve1_overlay.gif" width="420" alt="Skeleton tracking a real serve with live knee and elbow angles"></p>
 
-Most club players never get a coach to watch their serve. Djoker does it with one camera and an Arduino VENTUNO Q. You serve, it tracks your body, compares your motion with Novak Djokovic's, and gives you **one** thing to work on, a few seconds later.
+Most club players never get a coach to watch their serve. Djoker does it with one camera and an Arduino VENTUNO Q. You serve, it tracks your body, compares your motion with Novak Djokovic's, and gives you live coaching via audio device.
 
 The AI models (pose and language) run on the board through **ExecuTorch on the Qualcomm Hexagon NPU**, and a laptop hosts the app. Nothing goes to the cloud, so it works without court Wi-Fi.
 
@@ -22,7 +22,7 @@ flowchart TD
     I -- no / timeout / fails check --> L
 ```
 
-The AI does two jobs: pose estimation and phrasing. Everything that decides *what* to tell you is plain, testable code. The rule engine picks the fault and the direction of the fix. The LLM may only reword that sentence, and the checker rejects any reply that adds numbers or advice or reverses the direction. If the LLM is unavailable or its reply fails the check, the speaker reads the canonical sentence instead.
+The AI does: pose estimation, analysis, audio coaching, everything is on the edge device. All the recordings are on device, you can get coaching everywhere, any time without the need or internet and a coach in your area. The rule engine picks the fault and the direction of the fix. We use Qwen and Piper for real time feedback and audio, gemma for post shot analysis, RTMPose Qualcomm AI hub models to standardize the interface to AI models.
 
 The diagram is the full design. Two front ends implement it today. The **web app** runs pose and Gemma on the NPU and shows the cue on screen. The **command-line coach** runs the `rules.json` → checker → speaker path with Piper voice, using pose on the laptop CPU.
 
