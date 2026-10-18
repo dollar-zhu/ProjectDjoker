@@ -1,0 +1,97 @@
+{
+  "review_date": "2026-10-17",
+  "status": "provisional_development_set",
+  "method": "Selected frame sequences visually inspected; coach captions/descriptions known during review. Not blinded, not a held-out evaluation.",
+  "cases": [
+    {
+      "id": "p001",
+      "subject": "Federer",
+      "url": "https://www.youtube.com/watch?v=f0gnXSwrK00",
+      "reviewed_range_s": [
+        10,
+        20
+      ],
+      "view": "rear_oblique",
+      "role": "positive_reference",
+      "expected_response": "Describe loading to upward extension; do not assess landing outside the excerpt.",
+      "coach_label": null,
+      "confidence": "high_for_visible_sequence",
+      "evidence": "federer_sequence.jpg"
+    },
+    {
+      "id": "a001",
+      "subject": "Bremen",
+      "url": "https://www.youtube.com/watch?v=-zEmDTe_KT4",
+      "reviewed_range_s": [
+        14.3,
+        16
+      ],
+      "view": "rear_oblique",
+      "role": "uncertainty_case",
+      "expected_response": "Identify toss-placement review candidate; request side view before diagnosing depth.",
+      "coach_label": "Toss too far behind head/body; place farther into court.",
+      "coach_label_range_s": [
+        64,
+        81
+      ],
+      "confidence": "medium_visual_concern_low_depth_diagnosis",
+      "evidence": "bremen_detail.jpg"
+    },
+    {
+      "id": "a004",
+      "subject": "Sara",
+      "url": "https://www.youtube.com/watch?v=Om84TmRk2i0",
+      "reviewed_range_s": [
+        141,
+        143.2
+      ],
+      "view": "rear_oblique",
+      "role": "foot_placement_review",
+      "expected_response": "Flag late step near baseline before takeoff; show evidence and uncertainty, not a definitive officiating call.",
+      "coach_label": "Foot fault; late step during toss.",
+      "coach_label_range_s": [
+        143,
+        170
+      ],
+      "confidence": "medium_visual_concern",
+      "evidence": "sara_serve.jpg"
+    },
+    {
+      "id": "a002",
+      "subject": "Stephen",
+      "url": "https://www.youtube.com/watch?v=VfuC22ejLUE",
+      "reviewed_range_s": [
+        280,
+        390
+      ],
+      "view": "front_oblique",
+      "role": "view_rejection",
+      "expected_response": "Request rear view before rear-view scoring.",
+      "coach_label": "Shoulder-over-shoulder loading position; foot organisation.",
+      "confidence": "high_view_rejection",
+      "evidence": "stephen_detail.jpg"
+    },
+    {
+      "id": "a003",
+      "subject": "Vishal",
+      "url": "https://www.youtube.com/watch?v=RRm7AQo4x4I",
+      "reviewed_timestamps_s": [
+        80,
+        180,
+        240,
+        300,
+        400,
+        500,
+        600,
+        800,
+        1000
+      ],
+      "view": "low_oblique_split_screen",
+      "role": "input_rejection",
+      "expected_response": "Request original full-body clip; do not compare mismatched projected angles.",
+      "coach_label": "Prior CSV label of hip loading/over-rotation was not independently confirmed in this visual review.",
+      "confidence": "high_input_limitation",
+      "evidence": "vishal_overview.jpg"
+    }
+  ]
+}

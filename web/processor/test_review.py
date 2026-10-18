@@ -50,6 +50,23 @@ class ReviewTests(unittest.TestCase):
         self.assertEqual(r['events'],[])
         self.assertEqual(r['feedback']['mode'],'retry')
 
+    def test_walk_in_and_out_do_not_reject_the_visible_serve(self):
+        t,p,c=sequence()
+        # Recording starts/stops close to the camera, outside the full-body view.
+        prefix=np.repeat(p[:1],60,axis=0);prefix[:,:,1]=-50
+        pose=np.concatenate([prefix,p,prefix])
+        scores=np.full((len(pose),17),.9)
+        with tempfile.TemporaryDirectory() as d:
+            r=review(Path(d),np.arange(len(pose))/30,pose,scores,'rear','right',[240,300])
+        self.assertEqual(r['feedback']['mode'],'observation')
+        self.assertAlmostEqual(r['events'][0]['time'],3.1,delta=.1)
+        self.assertAlmostEqual(r['events'][1]['time'],4,delta=.1)
+        self.assertEqual(r['events'][0]['frame'],round(r['events'][0]['time']*30))
+
+    def test_missing_joints_inside_serve_still_fail_quality_gate(self):
+        scores=np.full((91,17),.9);scores[20:60,15]=.1
+        self.assertEqual(self.call(scores=scores)['feedback']['mode'],'retry')
+
     def test_occluded_wrist_before_loading_does_not_discard_visible_leg_evidence(self):
         scores=np.full((91,17),.9);scores[:50,10]=.1
         r=self.call(scores=scores)

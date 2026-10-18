@@ -33,6 +33,23 @@ class Events(unittest.TestCase):
         load, reach, angles, flags = detect_events(t, pose)
         self.assertEqual(reach, 40); self.assertLessEqual(abs(load - 25), 1); self.assertEqual(flags, [])
 
+    def test_missing_leg_does_not_turn_two_knee_average_into_one_knee_minimum(self):
+        t, pose = synthetic_serve()
+        t = np.arange(len(t)) / 20
+        pose[18, 15] = np.nan
+        pose[18, 12], pose[18, 14], pose[18, 16] = [110,300], [210,300], [160,386]
+        load, reach, _, flags = detect_events(t, pose)
+        self.assertEqual(load, 25)
+        self.assertEqual(reach, 40)
+        self.assertEqual(flags, [])
+
+    def test_no_complete_knee_pair_returns_unavailable(self):
+        t, pose = synthetic_serve()
+        pose[:,15] = np.nan
+        load, _, _, flags = detect_events(t, pose)
+        self.assertIsNone(load)
+        self.assertIn('no_complete_knee_pair', flags)
+
     def test_wrist_peak_before_loading_fails_closed(self):
         t, pose = synthetic_serve(load=35, wrist_peak=15)
         load, reach, _, flags = detect_events(t, pose)

@@ -29,11 +29,19 @@ def detect_events(times, pose2d):
     times = np.asarray(times, float); n = len(times)
     angles = interior_angles(pose2d)
     height = smooth(times, -pose2d[:, R_WRIST, 1])
-    knee = smooth(times, np.nanmean(angles[:, 2:4], axis=1))
+    # Compare the same two-knee quantity in every frame. A missing leg must
+    # not turn the average into the other leg alone (an artificial minimum).
+    paired = np.isfinite(angles[:, 2:4]).all(1)
+    knee = smooth(times, np.mean(angles[:, 2:4], axis=1))
+    knee[~paired] = np.nan
     last = max(2, int(np.floor((1 - REACH_EXCLUDE_TAIL) * (n - 1))))
+    if not np.isfinite(height[:last + 1]).any():
+        return None, None, angles, ['hitting_wrist_unavailable']
     reach = int(np.nanargmax(height[:last + 1]))
     flags = []
     if reach < 2: return None, reach, angles, ['reach_too_early']
+    if not np.isfinite(knee[:reach]).any():
+        return None, reach, angles, ['no_complete_knee_pair']
     load = int(np.nanargmin(knee[:reach]))
     if load == 0: flags.append('load_at_clip_start')
     if load == reach - 1: flags.append('load_adjacent_to_reach')
@@ -41,7 +49,7 @@ def detect_events(times, pose2d):
     # Fail closed: knees still bending after the wrist peak means the peak preceded loading
     # (e.g. a mislabelled or toss-arm wrist), so the load estimate is not trustworthy.
     after = (times > times[reach]) & (times <= times[reach] + POST_REACH_CHECK_S)
-    if after.any() and np.nanmin(knee[after]) < knee[load] - DEEPER_TOLERANCE_DEG:
+    if np.isfinite(knee[after]).any() and np.nanmin(knee[after]) < knee[load] - DEEPER_TOLERANCE_DEG:
         return None, reach, angles, flags + ['deeper_knee_flexion_after_reach']
     return load, reach, angles, flags
 
@@ -80,7 +88,7 @@ def serve_metrics(times, pose2d):
     times = np.asarray(times, float)
     load, reach, angles, flags = detect_events(times, pose2d)
     if load is None: return None
-    s = smooth(times, angles); knee = np.nanmean(s[:, 2:4], 1)
+    s = smooth(times, angles); knee = np.mean(s[:, 2:4], 1)
     above = np.flatnonzero(knee[:load] > 150); start = above[-1] if len(above) else 0
     up = np.flatnonzero(knee[load:] > 160)
     drive = np.gradient(s[:, 2], times); window = (times > times[load]) & (times <= times[load] + 0.35)
