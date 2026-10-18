@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdir,readFile,rm,writeFile} from 'node:fs/promises';
+import {mkdir,mkdtemp,readFile,rm,writeFile} from 'node:fs/promises';
 import {join} from 'node:path';
+import {tmpdir} from 'node:os';
 import {randomUUID} from 'node:crypto';
 import {createServer} from 'node:net';
 import {canUploadAudio,MAX_WAV_BYTES,parseAudioCommand,readBounded,validateStatus,validateWav} from './live-audio';
@@ -86,7 +87,7 @@ test('audio route enforces origin, camera session, single pending controls and u
  process.env.DJOKER_DATA_DIR=dir;
  const route=await import('../app/api/live/audio/route');
  const request=(body:unknown,headers:Record<string,string>={})=>new Request('http://localhost/api/live/audio',{method:'POST',headers:{'Content-Type':'application/json',...headers},body:JSON.stringify(body)});
- const live=join(dir,'live');
+ const live=join(dir,'live'),sock=join(await mkdtemp(join(tmpdir(),'djoker-audio-')),'audio.sock');
  const received:{session_id:string;length:number;wav:Buffer}[]=[];
  let acknowledgment='{"accepted":true}\n';
  const server=createServer(socket=>{
@@ -104,10 +105,10 @@ test('audio route enforces origin, camera session, single pending controls and u
   assert.equal((await route.POST(request({action:'enable',value:'yes'}))).status,400);
   assert.equal((await route.POST(request({action:'cancel'}))).status,409);
   await mkdir(live,{recursive:true});await writeFile(join(live,'status.json'),JSON.stringify(camera));
-  await new Promise<void>((resolve,reject)=>{server.once('error',reject);server.listen(join(live,'audio.sock'),resolve);});
-  const update=async(changes={})=>writeFile(join(live,'audio-status.json'),JSON.stringify({...audio,updated:Date.now()/1000,...changes}));
+  await new Promise<void>((resolve,reject)=>{server.once('error',reject);server.listen(sock,resolve);});
+  const update=async(changes={})=>writeFile(join(live,'audio-status.json'),JSON.stringify({...audio,socket:sock,updated:Date.now()/1000,...changes}));
   await update();
-  assert.equal((await (await route.GET()).json()).available,true);
+  const pub=await (await route.GET()).json();assert.equal(pub.available,true);assert.equal(pub.socket,undefined);
   assert.equal((await route.POST(request({action:'mute',value:true},{host:'127.0.0.1:3017',origin:'http://127.0.0.1:3017'}))).status,202);
   assert.equal(JSON.parse(await readFile(join(live,'audio-command.json'),'utf8')).session_id,camera.session);
   assert.equal((await route.POST(request({action:'cancel'}))).status,409);
@@ -123,5 +124,5 @@ test('audio route enforces origin, camera session, single pending controls and u
   await update({listening:false});assert.equal((await upload()).status,409);
   assert.equal((await route.POST(new Request('http://localhost/api/live/audio',{method:'POST',headers:{'Content-Type':'audio/wav'},body:new Uint8Array(MAX_WAV_BYTES+1)}))).status,413);
   await update({updated:Date.now()/1000-6});assert.equal((await (await route.GET()).json()).enabled,false);
- }finally{if(server.listening)await new Promise<void>(resolve=>server.close(()=>resolve()));await rm(dir,{recursive:true,force:true});}
+ }finally{if(server.listening)await new Promise<void>(resolve=>server.close(()=>resolve()));await rm(dir,{recursive:true,force:true});await rm(join(sock,'..'),{recursive:true,force:true});}
 });

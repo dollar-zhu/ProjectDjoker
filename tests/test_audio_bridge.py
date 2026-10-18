@@ -63,6 +63,38 @@ class AudioIPC(unittest.TestCase):
             self.assertFalse((directory / 'utterance.wav').exists())
             self.assertFalse((directory / 'audio-status.json').exists())
 
+    def test_long_directory_binds_short_published_socket(self):
+        controller = Mock()
+        controller.snapshot.return_value = {'state': 'IDLE', 'enabled': False}
+        module = types.ModuleType('live.conversation')
+        module.LiveConversation = Mock()
+        module.LiveConversation.from_environment.return_value = controller
+        spec = importlib.util.spec_from_file_location('audio_bridge_long_test', ROOT / 'web/processor/audio_bridge.py')
+        bridge_module = importlib.util.module_from_spec(spec)
+        with patch.dict(sys.modules, {'live.conversation': module}):
+            spec.loader.exec_module(bridge_module)
+        with tempfile.TemporaryDirectory() as tmp:
+            directory = Path(tmp) / ('x' * 120)
+            directory.mkdir()
+            bridge = bridge_module.AudioBridge(directory)
+            try:
+                socket_dir = bridge.socket_path.parent
+                self.assertLessEqual(len(str(bridge.socket_path.resolve())), bridge_module.MAX_SOCKET_PATH)
+                deadline = time.monotonic() + 2
+                while not (directory / 'audio-status.json').exists() and time.monotonic() < deadline:
+                    time.sleep(.01)
+                published = json.loads((directory / 'audio-status.json').read_text())['socket']
+                self.assertEqual(published, str(bridge.socket_path.resolve()))
+                controller.submit_wav.return_value = True
+                with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
+                    client.settimeout(2)
+                    client.connect(published)
+                    client.sendall(json.dumps({'session_id': bridge.session_id, 'length': 44}).encode() + b'\n' + b'x' * 44)
+                    self.assertTrue(json.loads(client.recv(1024))['accepted'])
+            finally:
+                bridge.close()
+            self.assertFalse(socket_dir.exists())
+
     def test_local_camera_reuses_existing_latest_frame_reader(self):
         stubs = {}
         for module_name, names in {

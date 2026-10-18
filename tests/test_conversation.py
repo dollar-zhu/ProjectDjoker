@@ -444,6 +444,19 @@ class ConversationTests(unittest.TestCase):
         self.assertEqual(resolved['model'], str(Path.cwd() / 'config/tiny.en'))
         self.assertFalse(resolved['allow_download'])
 
+    def test_speaker_route_is_explicit_host_output(self):
+        from live.bluetooth import SpeakerRoute
+        controller = LiveConversation('speaker', config={'audio': {'backend': 'print', 'route': 'speaker'}})
+        self.controllers.append(controller)
+        route = controller._selected_route()
+        self.assertIsInstance(route, SpeakerRoute)
+        with mock.patch('live.bluetooth.shutil.which', side_effect=lambda name: '/usr/bin/afplay' if name == 'afplay' else None):
+            route = SpeakerRoute()
+        self.assertTrue(route.status()['audio_ready'])
+        self.assertEqual(route.playback_command('/tmp/x.wav'), ['/usr/bin/afplay', '/tmp/x.wav'])
+        with mock.patch('live.bluetooth.shutil.which', return_value=None):
+            self.assertFalse(SpeakerRoute().status()['audio_ready'])
+
     def test_null_bluetooth_address_never_constructs_default_host_speaker(self):
         from live import audio, bluetooth
         with mock.patch.object(audio, 'Speaker') as speaker, \

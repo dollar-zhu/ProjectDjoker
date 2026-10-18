@@ -2,12 +2,17 @@
 import json
 import os
 from pathlib import Path
+import shutil
 import socket
+import tempfile
 import threading
 import time
 import uuid
 
 from live.conversation import LiveConversation
+
+# sun_path is 104 bytes on macOS (108 on Linux), including the terminating NUL.
+MAX_SOCKET_PATH = 103
 
 
 class AudioBridge:
@@ -16,7 +21,12 @@ class AudioBridge:
         self.session_id = str(uuid.uuid4())
         self.stop = threading.Event()
         self.socket_path = self.directory / 'audio.sock'
+        self.socket_dir = None
         self.socket_path.unlink(missing_ok=True)
+        if len(os.fsencode(str(self.socket_path.resolve()))) > MAX_SOCKET_PATH:
+            # Deep worktree paths overflow sun_path; bind in a private (0700) short directory instead.
+            self.socket_dir = Path(tempfile.mkdtemp(prefix='djoker-audio-'))
+            self.socket_path = self.socket_dir / 'audio.sock'
         self.server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         self.server.bind(str(self.socket_path))
         self.socket_path.chmod(0o600)
@@ -83,10 +93,10 @@ class AudioBridge:
                             self.controller.command(data)
                     finally:
                         command.unlink(missing_ok=True)
-                state = {**self.controller.snapshot(), 'pid': os.getpid(),
+                state = {**self.controller.snapshot(), 'pid': os.getpid(), 'socket': str(self.socket_path.resolve()),
                          'session_id': self.session_id, 'updated': time.time()}
             except Exception as exc:
-                state = {'state': 'IDLE', 'enabled': False, 'error': str(exc),
+                state = {'state': 'IDLE', 'enabled': False, 'error': str(exc), 'socket': str(self.socket_path.resolve()),
                          'pid': os.getpid(), 'session_id': self.session_id, 'updated': time.time()}
             temp = self.directory / 'audio-status.tmp'
             try:
@@ -106,5 +116,7 @@ class AudioBridge:
         self.thread.join(timeout=2)
         self.mic_thread.join(timeout=2)
         self.socket_path.unlink(missing_ok=True)
+        if self.socket_dir:
+            shutil.rmtree(self.socket_dir, ignore_errors=True)
         for name in ('utterance.wav', 'audio-command.json', 'audio-status.json'):
             (self.directory / name).unlink(missing_ok=True)

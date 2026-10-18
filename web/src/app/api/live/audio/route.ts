@@ -12,11 +12,11 @@ async function status(){
   return validateStatus(audio,camera,Date.now()/1000,pid=>{try{process.kill(pid,0);return true;}catch{return false;}});
  }catch{return unavailableAudio();}
 }
-export async function GET(){return Response.json(await status(),{headers:{'Cache-Control':'no-store'}});}
+export async function GET(){const {socket:_,...pub}=await status();return Response.json(pub,{headers:{'Cache-Control':'no-store'}});}
 async function exists(path:string){try{await access(path);return true;}catch{return false;}}
-async function sendWav(bytes:Uint8Array,session:string){
+async function sendWav(bytes:Uint8Array,session:string,path=join(dir,'audio.sock')){
  await new Promise<void>((resolve,reject)=>{
-  const socket=createConnection(join(dir,'audio.sock'));
+  const socket=createConnection(path);
   let ack=Buffer.alloc(0),settled=false;
   const finish=(error?:Error)=>{
    if(settled)return;settled=true;clearTimeout(timer);socket.destroy();
@@ -65,7 +65,7 @@ export async function POST(req:Request){
   const latest=await status();
   if(!latest.available||latest.session!==current.session||latest.pid!==current.pid||(!command&&!canUploadAudio(latest)))return Response.json({error:'Audio session changed. Try again.'},{status:409});
   if(command){await rename(tmp!,path);tmp=undefined;}
-  else await sendWav(bytes,current.session!);
+  else await sendWav(bytes,current.session!,current.socket);
   return Response.json({accepted:true},{status:202});
  }catch(e){
   const error=e instanceof Error?e.message:'Audio request failed.';

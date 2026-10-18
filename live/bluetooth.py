@@ -138,6 +138,24 @@ class BluetoothRoute:
         return report
 
 
+class SpeakerRoute:
+    """Explicit opt-in (audio.route="speaker"): the worker host's current default output, e.g. a laptop speaker."""
+    address = None
+
+    def __init__(self):
+        self.player = shutil.which('afplay') or shutil.which('aplay')
+
+    def status(self):
+        ready = bool(self.player)
+        return dict(address=None, paired=ready, connected=ready, audio_ready=ready,
+                    error=None if ready else 'host speaker needs afplay or aplay',
+                    sink_name='default', node_name=None, audio_profile='speaker')
+
+    def playback_command(self, path):
+        if not self.player: raise RuntimeError('host speaker needs afplay or aplay')
+        return [self.player, str(path)]
+
+
 class GreetingGate:
     """One event per debounced ready transition; a transient disconnect does not re-arm."""
     def __init__(self, debounce_s=1.0, clock=time.monotonic):

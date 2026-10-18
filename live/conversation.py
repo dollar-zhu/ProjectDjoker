@@ -7,7 +7,8 @@ independent bounded workers; PTT accepts in-memory WAV, never opens a mic.
 Controllers start disabled unless conversation.enabled is explicitly true.
 Ingest remains available while disabled; an enable command activates speech.
 Audio voice/WAV and local ASR paths resolve relative to the JSON config.
-An unset Bluetooth address disables speaking; there is no host-default route.
+An unset Bluetooth address disables speaking unless audio.route="speaker"
+explicitly opts into the worker host's default output (e.g. a laptop speaker).
 Playback uses the worker host by default. audio.remote_url selects the
 loopback-forwarded Ventuno Piper service for a Mac camera worker.
 """
@@ -470,7 +471,9 @@ class LiveConversation:
     def _selected_route(self):
         if self._route is not None:
             return self._route
-        from .bluetooth import BluetoothRoute
+        from .bluetooth import BluetoothRoute, SpeakerRoute
+        if (self.config.get('audio') or {}).get('route') == 'speaker':
+            return SpeakerRoute()
         address = (self.config.get('audio') or {}).get('bluetooth_address')
         if not address:
             raise RuntimeError('Select a Bluetooth address; live speaking is disabled without a selected route')

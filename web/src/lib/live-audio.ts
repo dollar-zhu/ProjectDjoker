@@ -3,6 +3,7 @@ export type AudioStatus={
  available:boolean;enabled:boolean;muted:boolean;listening:boolean;state:string;
  paired:boolean;connected:boolean;audio_ready:boolean;heart_ready?:boolean;updated:number;pid?:number;session?:string;
  transcript?:string;response?:string;observation_text?:string;error?:string;host?:string;led_error?:string;led_capability?:string;asr_error?:string;
+ socket?:string;
 };
 export const unavailableAudio=(error='Audio worker is unavailable. Start the camera and check its audio configuration.'):AudioStatus=>({
  available:false,enabled:false,muted:true,listening:false,state:'DISABLED',paired:false,connected:false,audio_ready:false,heart_ready:false,updated:0,error,
@@ -25,6 +26,8 @@ export function validateStatus(audio:unknown,camera:unknown,now=Date.now()/1000,
  for(const key of ['transcript','response','observation_text','error','host','led_error','led_capability'] as const)if(typeof a[key]==='string')result[key]=(a[key] as string).slice(0,4000);
  const asr=raw.asr&&typeof raw.asr==='object'?raw.asr as Record<string,unknown>:null;
  if(asr?.enabled===true&&typeof asr.error==='string')result.asr_error=asr.error.slice(0,4000);
+ // The worker binds outside DATA when DATA/live/audio.sock would overflow sun_path.
+ if(typeof raw.socket==='string'&&raw.socket.startsWith('/')&&raw.socket.endsWith('/audio.sock'))result.socket=raw.socket;
  return result;
 }
 export type AudioCommand={action:'enable'|'mute'|'cancel'|'listen'|'stop_listening'|'question';value?:boolean;text?:string};
