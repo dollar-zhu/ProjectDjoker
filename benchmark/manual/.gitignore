@@ -1,0 +1,9 @@
+cache/
+runs/
+
+# Source media and generated review excerpts stay local.
+*.mp4
+*.webm
+*.mov
+*.jpg
+*.png

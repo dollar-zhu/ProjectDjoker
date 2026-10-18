@@ -17,3 +17,16 @@ dist/
 build/
 *.egg-info/
 local/
+
+# Local pose model exports, environments and intermediate tensors
+*.pte
+*.pt
+*.pt2
+*.onnx
+*.etdp
+*.bin
+*.raw
+*.npy
+*.mp4
+.venv-et/
+demo/ventuno-pose/et/onnx/

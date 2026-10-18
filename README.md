@@ -173,3 +173,15 @@ Dataset: Jason Wang et al., *Large-Scale 3D Pose Estimation of Professional Tenn
 - Dataset license: CC BY 4.0, reproduced in [DATA_LICENSE](DATA_LICENSE).
 
 This project adds sample selection, derived angles, estimated phases, normalization, statistical summaries and visualizations. The dataset license applies to the source data; no separate license is assigned here to newly authored project code.
+
+## Local serve review interface
+
+The Next.js app supports video upload, manual player selection, RTMPose processing on Ventuno or the Mac CPU, and timestamped skeleton playback with evidence-linked observations. See [web/README.md](web/README.md) for dependencies, setup and tests.
+
+```sh
+cd web
+npm ci
+npm run dev -- --hostname 127.0.0.1 --port 3017
+```
+
+Manual development cases and source timestamps are documented in [benchmark/manual/README.md](benchmark/manual/README.md). They are provisional examples, not a held-out accuracy benchmark. Videos, model files and generated reviews remain local.
